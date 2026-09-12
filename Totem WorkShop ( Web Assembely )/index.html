@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Totem Workshop Pro 🪽 | Web Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link data-trunk rel="rust" data-bin="totem_workshop" data-wasm-opt="0" />
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0d0f16;
+            color: #f1f5f9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #the_canvas_id {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+            outline: none;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            pointer-events: none;
+            user-select: none;
+        }
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(56, 189, 248, 0.15);
+            border-radius: 50%;
+            border-top-color: #38bdf8;
+            animation: spin 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+        .loading-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: #ffffff;
+        }
+        .loading-sub {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+    <!-- MediaPipe AI Background Segmentation for Videos -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <div class="loading-title">Totem Workshop Pro 🪽</div>
+        <div class="loading-sub">Initializing WebAssembly Engine...</div>
+    </div>
+    <canvas id="the_canvas_id"></canvas>
+    <script>
+        window.totemWeb = {
+            pickFile: function(accept) {
+                return new Promise((resolve) => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = accept;
+                    input.style.display = 'none';
+                    document.body.appendChild(input);
+
+                    let settled = false;
+                    const cleanup = () => {
+                        if (settled) return;
+                        settled = true;
+                        if (input.parentNode) {
+                            document.body.removeChild(input);
+                        }
+                        const canvas = document.getElementById('the_canvas_id');
+                        if (canvas) {
+                            canvas.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
+                            canvas.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+                            canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+                        }
+                    };
+
+                    input.onchange = function(e) {
+                        const file = e.target.files && e.target.files[0];
+                        if (!file) {
+                            cleanup();
+                            resolve(null);
+                            return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = function(evt) {
+                            cleanup();
+                            resolve({
+                                name: file.name,
+                                bytes: new Uint8Array(evt.target.result)
+                            });
+                        };
+                        reader.onerror = function() {
+                            cleanup();
+                            resolve(null);
+                        };
+                        reader.readAsArrayBuffer(file);
+                    };
+
+                    input.oncancel = function() {
+                        cleanup();
+                        resolve(null);
+                    };
+
+                    window.addEventListener('focus', function onFocus() {
+                        window.removeEventListener('focus', onFocus);
+                        setTimeout(() => {
+                            if (!settled) {
+                                cleanup();
+                                resolve(null);
+                            }
+                        }, 400);
+                    }, { once: true });
+
+                    input.click();
+                });
+            },
+
+            probeVideo: function(videoBytes) {
+                return new Promise((resolve) => {
+                    try {
+                        let mime = 'video/mp4';
+                        if (videoBytes.length > 4) {
+                            if (videoBytes[0] === 0x1A && videoBytes[1] === 0x45 && videoBytes[2] === 0xDF && videoBytes[3] === 0xA3) {
+                                mime = 'video/webm';
+                            }
+                        }
+                        const blob = new Blob([videoBytes], { type: mime });
+                        const url = URL.createObjectURL(blob);
+                        const video = document.createElement('video');
+                        video.preload = 'metadata';
+                        video.muted = true;
+                        video.playsInline = true;
+                        video.src = url;
+
+                        const timer = setTimeout(() => {
+                            URL.revokeObjectURL(url);
+                            resolve(null);
+                        }, 4000);
+
+                        video.onloadedmetadata = () => {
+                            clearTimeout(timer);
+                            const duration = video.duration || 0;
+                            let fps = 30.0;
+                            try {
+                                const stream = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
+                                const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+                                if (track && track.getSettings) {
+                                    const sFps = track.getSettings().frameRate;
+                                    if (sFps && sFps > 0) fps = sFps;
+                                }
+                            } catch(e) {}
+
+                            const totalFrames = Math.max(1, Math.round(duration * fps));
+                            URL.revokeObjectURL(url);
+                            resolve({ duration: duration, fps: fps, totalFrames: totalFrames });
+                        };
+                        video.onerror = () => {
+                            clearTimeout(timer);
+                            URL.revokeObjectURL(url);
+                            resolve(null);
+                        };
+                    } catch(e) {
+                        resolve(null);
+                    }
+                });
+            },
+
+            extractVideoFrames: function(videoBytes, targetFrames, targetSize, removeBackground, onProgress) {
+                return new Promise(async (resolve, reject) => {
+                    try {
+                        let mime = 'video/mp4';
+                        if (videoBytes.length > 4) {
+                            if (videoBytes[0] === 0x1A && videoBytes[1] === 0x45 && videoBytes[2] === 0xDF && videoBytes[3] === 0xA3) {
+                                mime = 'video/webm';
+                            } else if (videoBytes[0] === 0x4F && videoBytes[1] === 0x67 && videoBytes[2] === 0x67 && videoBytes[3] === 0x53) {
+                                mime = 'video/ogg';
+                            }
+                        }
+                        const blob = new Blob([videoBytes], { type: mime });
+                        const url = URL.createObjectURL(blob);
+                        const video = document.createElement('video');
+                        video.src = url;
+                        video.muted = true;
+                        video.playsInline = true;
+                        video.preload = 'auto';
+
+                        await new Promise((res, rej) => {
+                            video.onloadedmetadata = () => res();
+                            video.onerror = () => rej(new Error("Browser could not decode this video. Please ensure it is standard MP4, WebM, or MOV!"));
+                        });
+
+                        const duration = Math.max(0.1, video.duration || 1.0);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = targetSize;
+                        canvas.height = targetSize;
+                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = targetSize;
+                        tempCanvas.height = targetSize;
+                        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+                        // Initialize MediaPipe AI Selfie Segmenter if background removal is enabled
+                        let segmenter = null;
+                        if (removeBackground && window.SelfieSegmentation) {
+                            try {
+                                segmenter = new window.SelfieSegmentation({
+                                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+                                });
+                                segmenter.setOptions({
+                                    modelSelection: 1, // 1: portrait / full subject model
+                                });
+                                await segmenter.initialize();
+                            } catch (e) {
+                                console.warn("SelfieSegmentation initialization failed, using algorithmic cutout:", e);
+                                segmenter = null;
+                            }
+                        }
+
+                        const frameCount = Math.max(1, targetFrames);
+                        const frames = [];
+                        const interval = duration / frameCount;
+
+                        for (let i = 0; i < frameCount; i++) {
+                            const time = Math.min(duration - 0.01, i * interval);
+                            video.currentTime = time;
+
+                            await new Promise((res) => {
+                                const onSeeked = () => {
+                                    video.removeEventListener('seeked', onSeeked);
+                                    res();
+                                };
+                                video.addEventListener('seeked', onSeeked);
+                            });
+
+                            const vw = video.videoWidth || targetSize;
+                            const vh = video.videoHeight || targetSize;
+                            const minDim = Math.min(vw, vh);
+                            const sx = (vw - minDim) / 2;
+                            const sy = (vh - minDim) / 2;
+
+                            tempCtx.clearRect(0, 0, targetSize, targetSize);
+                            tempCtx.drawImage(video, sx, sy, minDim, minDim, 0, 0, targetSize, targetSize);
+
+                            if (segmenter) {
+                                let maskImage = null;
+                                segmenter.onResults((results) => {
+                                    maskImage = results.segmentationMask;
+                                });
+                                await segmenter.send({ image: tempCanvas });
+
+                                if (maskImage) {
+                                    ctx.clearRect(0, 0, targetSize, targetSize);
+                                    ctx.drawImage(maskImage, 0, 0, targetSize, targetSize);
+                                    ctx.globalCompositeOperation = 'source-in';
+                                    ctx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
+                                    ctx.globalCompositeOperation = 'source-over';
+                                } else {
+                                    ctx.clearRect(0, 0, targetSize, targetSize);
+                                    ctx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
+                                }
+                            } else {
+                                ctx.clearRect(0, 0, targetSize, targetSize);
+                                ctx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
+                            }
+
+                            const imgData = ctx.getImageData(0, 0, targetSize, targetSize);
+                            frames.push(imgData.data);
+
+                            if (typeof onProgress === 'function') {
+                                onProgress((i + 1) / frameCount, `${i + 1} / ${frameCount}`);
+                            }
+                        }
+
+                        if (segmenter && typeof segmenter.close === 'function') {
+                            segmenter.close();
+                        }
+                        URL.revokeObjectURL(url);
+                        resolve(frames);
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            },
+
+            decodeAudioToPcm: async function(audioBytes) {
+                try {
+                    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioCtxClass) return null;
+                    const audioCtx = new AudioCtxClass();
+
+                    const buffer = audioBytes.buffer.slice(
+                        audioBytes.byteOffset,
+                        audioBytes.byteOffset + audioBytes.byteLength
+                    );
+
+                    const decoded = await audioCtx.decodeAudioData(buffer);
+                    const channels = decoded.numberOfChannels;
+                    const sampleRate = decoded.sampleRate;
+                    const length = decoded.length;
+
+                    const interleaved = new Float32Array(length * channels);
+                    for (let c = 0; c < channels; c++) {
+                        const chData = decoded.getChannelData(c);
+                        for (let i = 0; i < length; i++) {
+                            interleaved[i * channels + c] = chData[i];
+                        }
+                    }
+                    await audioCtx.close();
+
+                    return {
+                        channels: channels,
+                        sampleRate: sampleRate,
+                        pcm: interleaved
+                    };
+                } catch (err) {
+                    console.error("Audio decoding failed in browser:", err);
+                    return null;
+                }
+            }
+        };
+    </script>
+</body>
+</html>

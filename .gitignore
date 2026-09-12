@@ -1,0 +1,7 @@
+target/
+*.zip
+*.rar
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
