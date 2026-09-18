@@ -1,4 +1,6 @@
-// ======================================================================// FILE: Cargo.toml// ======================================================================
+// ======================================================================
+// FILE: Cargo.toml
+// ======================================================================
 [package]
 name = "totem_workshop"
 version = "0.1.0"
@@ -30,7 +32,633 @@ js-sys = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 
 
-// ======================================================================// FILE: src\app.rs// ======================================================================
+// ======================================================================
+// FILE: index.html
+// ======================================================================
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Totem Workshop Pro 🪽 | Web Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link data-trunk rel="rust" data-bin="totem_workshop" data-wasm-opt="0" />
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0d0f16;
+            color: #f1f5f9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #the_canvas_id {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+            outline: none;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            pointer-events: none;
+            user-select: none;
+        }
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(56, 189, 248, 0.15);
+            border-radius: 50%;
+            border-top-color: #38bdf8;
+            animation: spin 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+        .loading-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: #ffffff;
+        }
+        .loading-sub {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+    <!-- MediaPipe AI Background Segmentation for Videos -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+    <!-- ONNX Runtime Web for BiRefNet AI Neural Background Removal -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <div class="loading-title">Totem Workshop Pro 🪽</div>
+        <div class="loading-sub">Initializing WebAssembly Engine...</div>
+    </div>
+    <canvas id="the_canvas_id"></canvas>
+    <script>
+        window.totemWeb = {
+            pickFile: function(accept) {
+                return new Promise((resolve) => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = accept;
+                    input.style.display = 'none';
+                    document.body.appendChild(input);
+
+                    let settled = false;
+                    const cleanup = () => {
+                        if (settled) return;
+                        settled = true;
+                        if (input.parentNode) {
+                            document.body.removeChild(input);
+                        }
+                        const canvas = document.getElementById('the_canvas_id');
+                        if (canvas) {
+                            canvas.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
+                            canvas.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+                            canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+                        }
+                    };
+
+                    input.onchange = function(e) {
+                        const file = e.target.files && e.target.files[0];
+                        if (!file) {
+                            cleanup();
+                            resolve(null);
+                            return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = function(evt) {
+                            cleanup();
+                            resolve({
+                                name: file.name,
+                                bytes: new Uint8Array(evt.target.result)
+                            });
+                        };
+                        reader.onerror = function() {
+                            cleanup();
+                            resolve(null);
+                        };
+                        reader.readAsArrayBuffer(file);
+                    };
+
+                    input.oncancel = function() {
+                        cleanup();
+                        resolve(null);
+                    };
+
+                    window.addEventListener('focus', function onFocus() {
+                        window.removeEventListener('focus', onFocus);
+                        setTimeout(() => {
+                            if (!settled) {
+                                cleanup();
+                                resolve(null);
+                            }
+                        }, 400);
+                    }, { once: true });
+
+                    input.click();
+                });
+            },
+
+            probeVideo: function(videoBytes) {
+                return new Promise((resolve) => {
+                    try {
+                        let mime = 'video/mp4';
+                        if (videoBytes.length > 4) {
+                            if (videoBytes[0] === 0x1A && videoBytes[1] === 0x45 && videoBytes[2] === 0xDF && videoBytes[3] === 0xA3) {
+                                mime = 'video/webm';
+                            }
+                        }
+                        const blob = new Blob([videoBytes], { type: mime });
+                        const url = URL.createObjectURL(blob);
+                        const video = document.createElement('video');
+                        video.preload = 'metadata';
+                        video.muted = true;
+                        video.playsInline = true;
+                        video.src = url;
+
+                        const timer = setTimeout(() => {
+                            URL.revokeObjectURL(url);
+                            resolve(null);
+                        }, 4000);
+
+                        video.onloadedmetadata = () => {
+                            clearTimeout(timer);
+                            const duration = video.duration || 0;
+                            let fps = 30.0;
+                            try {
+                                const stream = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
+                                const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+                                if (track && track.getSettings) {
+                                    const sFps = track.getSettings().frameRate;
+                                    if (sFps && sFps > 0) fps = sFps;
+                                }
+                            } catch(e) {}
+
+                            const totalFrames = Math.max(1, Math.round(duration * fps));
+                            URL.revokeObjectURL(url);
+                            resolve({ duration: duration, fps: fps, totalFrames: totalFrames });
+                        };
+                        video.onerror = () => {
+                            clearTimeout(timer);
+                            URL.revokeObjectURL(url);
+                            resolve(null);
+                        };
+                    } catch(e) {
+                        resolve(null);
+                    }
+                });
+            },
+
+            getOrFetchBiRefNetModel: async function(onProgress) {
+                const cacheKey = 'totem_birefnet_model_v1';
+                const modelUrl = 'https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx';
+
+                // Try CacheStorage first
+                if ('caches' in window) {
+                    try {
+                        const cache = await caches.open('totem-workshop-models');
+                        const match = await cache.match(cacheKey);
+                        if (match) {
+                            console.log('[BiRefNet] Found model in Browser CacheStorage!');
+                            return await match.arrayBuffer();
+                        }
+                    } catch(e) {
+                        console.warn('[BiRefNet] CacheStorage read failed:', e);
+                    }
+                }
+
+                // Check local ./models/ directory first, then CDN
+                let resp = null;
+                try {
+                    resp = await fetch('./models/birefnet-general-lite.onnx');
+                    if (!resp.ok) resp = null;
+                } catch(e) {}
+
+                if (!resp) {
+                    resp = await fetch(modelUrl);
+                }
+
+                if (!resp.ok) {
+                    throw new Error("Failed to download BiRefNet model from server or CDN");
+                }
+
+                const contentLength = +resp.headers.get('Content-Length') || 224005088;
+                const reader = resp.body.getReader();
+                let receivedLength = 0;
+                let chunks = [];
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    receivedLength += value.length;
+                    if (typeof onProgress === 'function') {
+                        const pct = receivedLength / contentLength;
+                        onProgress(pct * 0.4, `Loading AI Model: ${(receivedLength / (1024*1024)).toFixed(1)} MB / ${(contentLength / (1024*1024)).toFixed(1)} MB`);
+                    }
+                }
+
+                let allChunks = new Uint8Array(receivedLength);
+                let pos = 0;
+                for (let c of chunks) {
+                    allChunks.set(c, pos);
+                    pos += c.length;
+                }
+
+                const buffer = allChunks.buffer;
+
+                // Cache in CacheStorage for instant future loads
+                if ('caches' in window) {
+                    try {
+                        const cache = await caches.open('totem-workshop-models');
+                        await cache.put(cacheKey, new Response(buffer.slice(0), {
+                            headers: { 'Content-Type': 'application/octet-stream' }
+                        }));
+                    } catch(e) {}
+                }
+
+                return buffer;
+            },
+
+            initBiRefNetSession: async function(onProgress) {
+                if (this.biRefSession) return this.biRefSession;
+                if (this.isModelInitializing) {
+                    while (this.isModelInitializing) {
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                    return this.biRefSession;
+                }
+
+                this.isModelInitializing = true;
+                try {
+                    if (typeof ort === 'undefined') {
+                        console.warn("[BiRefNet] ONNX Runtime Web is not loaded");
+                        return null;
+                    }
+
+                    ort.env.wasm.numThreads = navigator.hardwareConcurrency ? Math.min(4, Math.max(1, navigator.hardwareConcurrency)) : 2;
+                    ort.env.wasm.simd = true;
+
+                    const modelBuffer = await this.getOrFetchBiRefNetModel(onProgress);
+
+                    if (typeof onProgress === 'function') {
+                        onProgress(0.42, "Compiling BiRefNet Neural Graph...");
+                    }
+
+                    this.biRefSession = await ort.InferenceSession.create(modelBuffer, {
+                        executionProviders: ['wasm'],
+                        graphOptimizationLevel: 'all'
+                    });
+                    console.log("[BiRefNet] Inference Session initialized successfully!");
+                    return this.biRefSession;
+                } catch(e) {
+                    console.warn("[BiRefNet] Session initialization failed:", e);
+                    return null;
+                } finally {
+                    this.isModelInitializing = false;
+                }
+            },
+
+            segmentBiRefNet: async function(session, sourceCanvas, targetSize) {
+                const modelDim = 1024;
+                const canvas1024 = document.createElement('canvas');
+                canvas1024.width = modelDim;
+                canvas1024.height = modelDim;
+                const ctx1024 = canvas1024.getContext('2d', { willReadFrequently: true });
+                ctx1024.drawImage(sourceCanvas, 0, 0, modelDim, modelDim);
+
+                const imgData = ctx1024.getImageData(0, 0, modelDim, modelDim);
+                const rgba = imgData.data;
+                const planeSize = modelDim * modelDim;
+
+                const float32Tensor = new Float32Array(3 * planeSize);
+                const meanR = 0.485, meanG = 0.456, meanB = 0.406;
+                const stdR = 0.229, stdG = 0.224, stdB = 0.225;
+
+                for (let i = 0; i < planeSize; i++) {
+                    const r = rgba[i * 4] / 255.0;
+                    const g = rgba[i * 4 + 1] / 255.0;
+                    const b = rgba[i * 4 + 2] / 255.0;
+
+                    float32Tensor[i] = (r - meanR) / stdR;
+                    float32Tensor[planeSize + i] = (g - meanG) / stdG;
+                    float32Tensor[planeSize * 2 + i] = (b - meanB) / stdB;
+                }
+
+                const inputTensor = new ort.Tensor('float32', float32Tensor, [1, 3, modelDim, modelDim]);
+                const inputName = session.inputNames[0];
+                const feeds = {};
+                feeds[inputName] = inputTensor;
+
+                const results = await session.run(feeds);
+                const outputName = session.outputNames[0];
+                const outputTensor = results[outputName];
+                const logits = outputTensor.data;
+
+                const maskCanvas = document.createElement('canvas');
+                maskCanvas.width = modelDim;
+                maskCanvas.height = modelDim;
+                const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+                const maskImgData = maskCtx.createImageData(modelDim, modelDim);
+                const maskBytes = maskImgData.data;
+
+                for (let i = 0; i < planeSize; i++) {
+                    const logit = logits[i];
+                    const alpha = 1.0 / (1.0 + Math.exp(-logit));
+                    const aByte = Math.round(alpha * 255);
+
+                    maskBytes[i * 4] = rgba[i * 4];
+                    maskBytes[i * 4 + 1] = rgba[i * 4 + 1];
+                    maskBytes[i * 4 + 2] = rgba[i * 4 + 2];
+                    maskBytes[i * 4 + 3] = aByte < 20 ? 0 : aByte;
+                }
+                maskCtx.putImageData(maskImgData, 0, 0);
+
+                const finalCanvas = document.createElement('canvas');
+                finalCanvas.width = targetSize;
+                finalCanvas.height = targetSize;
+                const finalCtx = finalCanvas.getContext('2d', { willReadFrequently: true });
+                finalCtx.imageSmoothingEnabled = true;
+                finalCtx.imageSmoothingQuality = 'high';
+                finalCtx.drawImage(maskCanvas, 0, 0, targetSize, targetSize);
+
+                return finalCtx.getImageData(0, 0, targetSize, targetSize).data;
+            },
+
+            extractVideoFrames: function(videoBytes, targetFrames, targetSize, removeBackground, onProgress) {
+                const self = this;
+                return new Promise(async (resolve, reject) => {
+                    try {
+                        let mime = 'video/mp4';
+                        if (videoBytes.length > 4) {
+                            if (videoBytes[0] === 0x1A && videoBytes[1] === 0x45 && videoBytes[2] === 0xDF && videoBytes[3] === 0xA3) {
+                                mime = 'video/webm';
+                            } else if (videoBytes[0] === 0x4F && videoBytes[1] === 0x67 && videoBytes[2] === 0x67 && videoBytes[3] === 0x53) {
+                                mime = 'video/ogg';
+                            }
+                        }
+                        const blob = new Blob([videoBytes], { type: mime });
+                        const url = URL.createObjectURL(blob);
+                        const video = document.createElement('video');
+                        video.src = url;
+                        video.muted = true;
+                        video.playsInline = true;
+                        video.preload = 'auto';
+
+                        await new Promise((res, rej) => {
+                            video.onloadedmetadata = () => res();
+                            video.onerror = () => rej(new Error("Browser could not decode this video. Please ensure it is standard MP4, WebM, or MOV!"));
+                        });
+
+                        const duration = Math.max(0.1, video.duration || 1.0);
+                        const frameCount = Math.max(1, targetFrames);
+                        const frames = [];
+                        const interval = duration / frameCount;
+
+                        let biRefSession = null;
+                        let selfieSegmenter = null;
+
+                        if (removeBackground) {
+                            if (typeof onProgress === 'function') {
+                                onProgress(0.02, "Initializing AI Background Removal...");
+                            }
+
+                            // 1. Try BiRefNet ONNX
+                            try {
+                                biRefSession = await self.initBiRefNetSession(onProgress);
+                            } catch(e) {
+                                console.warn("[AI] BiRefNet init failed, falling back:", e);
+                            }
+
+                            // 2. Fallback to MediaPipe Selfie Segmentation if BiRefNet not available
+                            if (!biRefSession && window.SelfieSegmentation) {
+                                try {
+                                    selfieSegmenter = new window.SelfieSegmentation({
+                                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+                                    });
+                                    selfieSegmenter.setOptions({ modelSelection: 1 });
+                                    await selfieSegmenter.initialize();
+                                } catch(e) {
+                                    console.warn("[AI] SelfieSegmentation fallback failed:", e);
+                                    selfieSegmenter = null;
+                                }
+                            }
+                        }
+
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = targetSize;
+                        tempCanvas.height = targetSize;
+                        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+                        for (let i = 0; i < frameCount; i++) {
+                            const time = Math.min(duration - 0.01, i * interval);
+                            video.currentTime = time;
+
+                            await new Promise((res) => {
+                                const onSeeked = () => {
+                                    video.removeEventListener('seeked', onSeeked);
+                                    res();
+                                };
+                                video.addEventListener('seeked', onSeeked);
+                            });
+
+                            const vw = video.videoWidth || targetSize;
+                            const vh = video.videoHeight || targetSize;
+                            const minDim = Math.min(vw, vh);
+                            const sx = (vw - minDim) / 2;
+                            const sy = (vh - minDim) / 2;
+
+                            tempCtx.clearRect(0, 0, targetSize, targetSize);
+                            tempCtx.drawImage(video, sx, sy, minDim, minDim, 0, 0, targetSize, targetSize);
+
+                            let frameData = null;
+
+                            if (biRefSession) {
+                                frameData = await self.segmentBiRefNet(biRefSession, tempCanvas, targetSize);
+                            } else if (selfieSegmenter) {
+                                let maskImage = null;
+                                selfieSegmenter.onResults((results) => {
+                                    maskImage = results.segmentationMask;
+                                });
+                                await selfieSegmenter.send({ image: tempCanvas });
+
+                                const outCanvas = document.createElement('canvas');
+                                outCanvas.width = targetSize;
+                                outCanvas.height = targetSize;
+                                const outCtx = outCanvas.getContext('2d', { willReadFrequently: true });
+
+                                if (maskImage) {
+                                    outCtx.clearRect(0, 0, targetSize, targetSize);
+                                    outCtx.drawImage(maskImage, 0, 0, targetSize, targetSize);
+                                    outCtx.globalCompositeOperation = 'source-in';
+                                    outCtx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
+                                    outCtx.globalCompositeOperation = 'source-over';
+                                } else {
+                                    outCtx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
+                                }
+                                frameData = outCtx.getImageData(0, 0, targetSize, targetSize).data;
+                            } else {
+                                frameData = tempCtx.getImageData(0, 0, targetSize, targetSize).data;
+                            }
+
+                            frames.push(frameData);
+
+                            if (typeof onProgress === 'function') {
+                                const basePct = removeBackground && biRefSession ? 0.45 : 0.0;
+                                const remainingScale = 1.0 - basePct;
+                                const pct = basePct + ((i + 1) / frameCount) * remainingScale;
+                                onProgress(pct, `Processed frame ${i + 1} / ${frameCount}`);
+                            }
+                        }
+
+                        if (selfieSegmenter && typeof selfieSegmenter.close === 'function') {
+                            selfieSegmenter.close();
+                        }
+                        URL.revokeObjectURL(url);
+                        resolve(frames);
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            },
+
+            decodeAudioToPcm: async function(audioBytes) {
+                try {
+                    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioCtxClass) return null;
+                    const audioCtx = new AudioCtxClass();
+
+                    const buffer = audioBytes.buffer.slice(
+                        audioBytes.byteOffset,
+                        audioBytes.byteOffset + audioBytes.byteLength
+                    );
+
+                    const decoded = await audioCtx.decodeAudioData(buffer);
+                    const channels = decoded.numberOfChannels;
+                    const sampleRate = decoded.sampleRate;
+                    const length = decoded.length;
+
+                    const interleaved = new Float32Array(length * channels);
+                    for (let c = 0; c < channels; c++) {
+                        const chData = decoded.getChannelData(c);
+                        for (let i = 0; i < length; i++) {
+                            interleaved[i * channels + c] = chData[i];
+                        }
+                    }
+                    await audioCtx.close();
+
+                    return {
+                        channels: channels,
+                        sampleRate: sampleRate,
+                        pcm: interleaved
+                    };
+                } catch (err) {
+                    console.error("Audio decoding failed in browser:", err);
+                    return null;
+                }
+            }
+        };
+    </script>
+</body>
+</html>
+
+
+// ======================================================================
+// FILE: src/main.rs
+// ======================================================================
+// Hide console window on Windows in release builds
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+#[cfg(not(target_arch = "wasm32"))]
+use eframe::egui::Vec2;
+#[cfg(not(target_arch = "wasm32"))]
+use totem_workshop::app::TotemWorkshopApp;
+
+#[cfg(not(target_arch = "wasm32"))]
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default()
+            .with_title("Totem Workshop Pro 🪽 | Created by @SirZigo")
+            .with_inner_size(Vec2::new(1100.0, 800.0))
+            .with_min_inner_size(Vec2::new(880.0, 650.0)),
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "Totem Workshop Pro",
+        options,
+        Box::new(|cc| Ok(Box::new(TotemWorkshopApp::new(cc)))),
+    )
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    use eframe::wasm_bindgen::JsCast as _;
+
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find the_canvas_id")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("the_canvas_id was not a HtmlCanvasElement");
+
+        if let Some(loading) = document.get_element_by_id("loading") {
+            loading.remove();
+        }
+
+        let start_result = eframe::WebRunner::new()
+            .start(
+                canvas,
+                web_options,
+                Box::new(|cc| Ok(Box::new(totem_workshop::app::TotemWorkshopApp::new(cc)))),
+            )
+            .await;
+
+        if let Err(e) = start_result {
+            log::error!("Failed to start eframe: {e:?}");
+        }
+    });
+}
+
+
+// ======================================================================
+// FILE: src/lib.rs
+// ======================================================================
+pub mod app;
+pub mod config;
+pub mod core;
+pub mod types;
+pub mod ui;
+
+
+// ======================================================================
+// FILE: src/app.rs
+// ======================================================================
 use crate::config::{load_config, AppConfig};
 use crate::types::AppPage;
 use crate::ui::animated_totem::{render_animated_totem, AnimatedTotemState};
@@ -139,7 +767,9 @@ impl eframe::App for TotemWorkshopApp {
 }
 
 
-// ======================================================================// FILE: src\config.rs// ======================================================================
+// ======================================================================
+// FILE: src/config.rs
+// ======================================================================
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
@@ -216,80 +846,9 @@ pub fn save_config(_path: &Path, config: &AppConfig) -> Result<(), String> {
 }
 
 
-// ======================================================================// FILE: src\lib.rs// ======================================================================
-pub mod app;
-pub mod config;
-pub mod core;
-pub mod types;
-pub mod ui;
-
-
-// ======================================================================// FILE: src\main.rs// ======================================================================
-// Hide console window on Windows in release builds
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
-#[cfg(not(target_arch = "wasm32"))]
-use eframe::egui::Vec2;
-#[cfg(not(target_arch = "wasm32"))]
-use totem_workshop::app::TotemWorkshopApp;
-
-#[cfg(not(target_arch = "wasm32"))]
-fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("Totem Workshop Pro 🪽 | Created by @SirZigo")
-            .with_inner_size(Vec2::new(1100.0, 800.0))
-            .with_min_inner_size(Vec2::new(880.0, 650.0)),
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "Totem Workshop Pro",
-        options,
-        Box::new(|cc| Ok(Box::new(TotemWorkshopApp::new(cc)))),
-    )
-}
-
-#[cfg(target_arch = "wasm32")]
-fn main() {
-    use eframe::wasm_bindgen::JsCast as _;
-
-    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
-
-    let web_options = eframe::WebOptions::default();
-
-    wasm_bindgen_futures::spawn_local(async {
-        let document = web_sys::window()
-            .expect("No window")
-            .document()
-            .expect("No document");
-
-        let canvas = document
-            .get_element_by_id("the_canvas_id")
-            .expect("Failed to find the_canvas_id")
-            .dyn_into::<web_sys::HtmlCanvasElement>()
-            .expect("the_canvas_id was not a HtmlCanvasElement");
-
-        if let Some(loading) = document.get_element_by_id("loading") {
-            loading.remove();
-        }
-
-        let start_result = eframe::WebRunner::new()
-            .start(
-                canvas,
-                web_options,
-                Box::new(|cc| Ok(Box::new(totem_workshop::app::TotemWorkshopApp::new(cc)))),
-            )
-            .await;
-
-        if let Err(e) = start_result {
-            log::error!("Failed to start eframe: {e:?}");
-        }
-    });
-}
-
-
-// ======================================================================// FILE: src\types.rs// ======================================================================
+// ======================================================================
+// FILE: src/types.rs
+// ======================================================================
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppPage {
     Dashboard,
@@ -391,859 +950,9 @@ pub enum FileUploadEvent {
 
 
 
-// ======================================================================// FILE: src\core\audio_converter.rs// ======================================================================
-use std::io::Cursor;
-use ogg::writing::{PacketWriter, PacketWriteEndInfo};
-use rusty_vorbis::{VorbisEncoder, VorbisEncoderConfig};
-
-/// Checks whether the audio bytes already start with the Ogg container magic header "OggS".
-pub fn is_ogg(data: &[u8]) -> bool {
-    data.len() >= 4 && &data[0..4] == b"OggS"
-}
-
-/// Encodes raw interleaved 32-bit float PCM samples to a valid Ogg Vorbis byte vector.
-pub fn encode_pcm_to_ogg(
-    interleaved_pcm: &[f32],
-    channels: u16,
-    sample_rate: u32,
-) -> Result<Vec<u8>, String> {
-    if interleaved_pcm.is_empty() || channels == 0 || sample_rate == 0 {
-        return Err("Invalid PCM input: empty or zero channels/sample_rate".to_string());
-    }
-
-    // Vorbis encoder profile is configured for stereo (2 channels).
-    // Normalize mono or multi-channel audio to standard stereo:
-    let (stereo_pcm, enc_channels) = if channels == 1 {
-        let mut stereo = Vec::with_capacity(interleaved_pcm.len() * 2);
-        for &sample in interleaved_pcm {
-            stereo.push(sample);
-            stereo.push(sample);
-        }
-        (stereo, 2u16)
-    } else if channels > 2 {
-        let n_frames = interleaved_pcm.len() / channels as usize;
-        let mut stereo = Vec::with_capacity(n_frames * 2);
-        for frame in 0..n_frames {
-            stereo.push(interleaved_pcm[frame * channels as usize]);
-            stereo.push(interleaved_pcm[frame * channels as usize + 1]);
-        }
-        (stereo, 2u16)
-    } else {
-        (interleaved_pcm.to_vec(), channels)
-    };
-
-    let mut enc = VorbisEncoder::new(VorbisEncoderConfig::default());
-    enc.push_pcm_f32(&stereo_pcm, enc_channels, sample_rate)
-        .map_err(|e| format!("VorbisEncoder push error: {e:?}"))?;
-    enc.finish();
-
-    let mut out = Vec::new();
-    let serial = 0x544F544D; // "TOTM" serial number for stream
-    let mut writer = PacketWriter::new(Cursor::new(&mut out));
-
-    let mut packets = Vec::new();
-    while let Ok(pkt) = enc.next_packet() {
-        packets.push(pkt);
-    }
-
-    if packets.is_empty() {
-        return Err("No Vorbis packets were produced by the encoder.".to_string());
-    }
-
-    let total = packets.len();
-    for (i, pkt) in packets.into_iter().enumerate() {
-        let absgp = pkt.pts.max(0) as u64;
-        let end_info = if i == 0 {
-            // First header packet (ident) must be in its own page per Vorbis spec
-            PacketWriteEndInfo::EndPage
-        } else if i == 1 {
-            // Second header packet (comment)
-            PacketWriteEndInfo::NormalPacket
-        } else if i == 2 {
-            // Third header packet (setup) finishes the header pages
-            PacketWriteEndInfo::EndPage
-        } else if i == total - 1 {
-            // Last audio packet ends the stream
-            PacketWriteEndInfo::EndStream
-        } else {
-            PacketWriteEndInfo::NormalPacket
-        };
-
-        writer
-            .write_packet(pkt.data, serial, end_info, absgp)
-            .map_err(|e| format!("Ogg write packet error: {e:?}"))?;
-    }
-
-    Ok(out)
-}
-
-
-// ======================================================================// FILE: src\core\mod.rs// ======================================================================
-pub mod model_generator;
-pub mod mojang_api;
-pub mod pack_builder;
-pub mod skin_processor;
-pub mod spritesheet;
-pub mod video_processor;
-pub mod audio_converter;
-pub mod web_bridge;
-
-
-// ======================================================================// FILE: src\core\model_generator.rs// ======================================================================
-use serde_json::json;
-#[cfg(not(target_arch = "wasm32"))]
-use std::path::Path;
-
-pub fn get_totem_model_json() -> serde_json::Value {
-    json!({
-        "parent": "minecraft:item/skin",
-        "textures": {
-            "layer0": "minecraft:item/totem_of_undying"
-        }
-    })
-}
-
-pub fn get_skin_model_json() -> serde_json::Value {
-    json!({
-        "texture_size": [64, 64],
-        "textures": { "0": "item/totem_of_undying" },
-        "elements": [
-            {
-                "from": [-4, 24, -4], "to": [4, 32, 4],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
-                "faces": {
-                    "north": {"uv": [2, 2, 4, 4], "texture": "#0"},
-                    "east": {"uv": [0, 2, 2, 4], "texture": "#0"},
-                    "south": {"uv": [6, 2, 8, 4], "texture": "#0"},
-                    "west": {"uv": [4, 2, 6, 4], "texture": "#0"},
-                    "up": {"uv": [4, 2, 2, 0], "texture": "#0"},
-                    "down": {"uv": [6, 0, 4, 2], "texture": "#0"}
-                }
-            },
-            {
-                "from": [-4.5, 23, -4.5], "to": [4.5, 32, 4.5],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
-                "faces": {
-                    "north": {"uv": [10, 2, 12, 4], "texture": "#0"},
-                    "east": {"uv": [8, 2, 10, 4], "texture": "#0"},
-                    "south": {"uv": [14, 2, 16, 4], "texture": "#0"},
-                    "west": {"uv": [12, 2, 14, 4], "texture": "#0"},
-                    "up": {"uv": [12, 2, 10, 0], "texture": "#0"},
-                    "down": {"uv": [14, 0, 12, 2], "texture": "#0"}
-                }
-            },
-            {
-                "from": [-4, 12, -2], "to": [4, 24, 2],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
-                "faces": {
-                    "north": {"uv": [5, 5, 7, 8], "texture": "#0"},
-                    "east": {"uv": [4, 5, 5, 8], "texture": "#0"},
-                    "south": {"uv": [8, 5, 10, 8], "texture": "#0"},
-                    "west": {"uv": [7, 5, 8, 8], "texture": "#0"},
-                    "up": {"uv": [7, 5, 5, 4], "texture": "#0"},
-                    "down": {"uv": [9, 4, 7, 5], "texture": "#0"}
-                }
-            },
-            {
-                "from": [-4.25, 11.75, -2.25], "to": [4.25, 24.25, 2.25],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
-                "faces": {
-                    "north": {"uv": [5, 9, 7, 12], "texture": "#0"},
-                    "east": {"uv": [4, 9, 5, 12], "texture": "#0"},
-                    "south": {"uv": [8, 9, 10, 12], "texture": "#0"},
-                    "west": {"uv": [7, 9, 8, 12], "texture": "#0"},
-                    "up": {"uv": [7, 9, 5, 8], "texture": "#0"},
-                    "down": {"uv": [9, 8, 7, 9], "texture": "#0"}
-                }
-            },
-            {
-                "from": [4, 12, -2], "to": [8, 24, 2],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0.5, 0]},
-                "faces": {
-                    "north": {"uv": [11, 5, 12, 8], "texture": "#0"},
-                    "east": {"uv": [10, 5, 11, 8], "texture": "#0"},
-                    "south": {"uv": [13, 5, 14, 8], "texture": "#0"},
-                    "west": {"uv": [12, 5, 13, 8], "texture": "#0"},
-                    "up": {"uv": [12, 5, 11, 4], "texture": "#0"},
-                    "down": {"uv": [13, 4, 12, 5], "texture": "#0"}
-                }
-            },
-            {
-                "from": [3.75, 11.75, -2.25], "to": [8.25, 24.25, 2.25],
-                "rotation": {"angle": 0, "axis": "y", "origin": [5.5, 18, 0]},
-                "faces": {
-                    "north": {"uv": [11, 9, 12, 12], "texture": "#0"},
-                    "east": {"uv": [10, 9, 11, 12], "texture": "#0"},
-                    "south": {"uv": [13, 9, 14, 12], "texture": "#0"},
-                    "west": {"uv": [12, 9, 13, 12], "texture": "#0"},
-                    "up": {"uv": [12, 9, 11, 8], "texture": "#0"},
-                    "down": {"uv": [13, 8, 12, 9], "texture": "#0"}
-                }
-            },
-            {
-                "from": [-8, 12, -2], "to": [-4, 24, 2],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0.5, 0]},
-                "faces": {
-                    "north": {"uv": [9, 13, 10, 16], "texture": "#0"},
-                    "east": {"uv": [8, 13, 9, 16], "texture": "#0"},
-                    "south": {"uv": [11, 13, 12, 16], "texture": "#0"},
-                    "west": {"uv": [10, 13, 11, 16], "texture": "#0"},
-                    "up": {"uv": [10, 13, 9, 12], "texture": "#0"},
-                    "down": {"uv": [11, 12, 10, 13], "texture": "#0"}
-                }
-            },
-            {
-                "from": [-8.25, 11.75, -2.25], "to": [-3.75, 24.25, 2.25],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0.5, 0]},
-                "faces": {
-                    "north": {"uv": [13, 13, 14, 16], "texture": "#0"},
-                    "east": {"uv": [12, 13, 13, 16], "texture": "#0"},
-                    "south": {"uv": [15, 13, 16, 16], "texture": "#0"},
-                    "west": {"uv": [14, 13, 15, 16], "texture": "#0"},
-                    "up": {"uv": [14, 13, 13, 12], "texture": "#0"},
-                    "down": {"uv": [15, 12, 14, 13], "texture": "#0"}
-                }
-            },
-            {
-                "from": [-0.1, 0, -2], "to": [3.9, 12, 2],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
-                "faces": {
-                    "north": {"uv": [1, 5, 2, 8], "texture": "#0"},
-                    "east": {"uv": [0, 5, 1, 8], "texture": "#0"},
-                    "south": {"uv": [3, 5, 4, 8], "texture": "#0"},
-                    "west": {"uv": [2, 5, 3, 8], "texture": "#0"},
-                    "up": {"uv": [2, 5, 1, 4], "texture": "#0"},
-                    "down": {"uv": [3, 4, 2, 5], "texture": "#0"}
-                }
-            },
-            {
-                "from": [-0.35, -0.25, -2.25], "to": [4.15, 12.25, 2.25],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
-                "faces": {
-                    "north": {"uv": [1, 9, 2, 12], "texture": "#0"},
-                    "east": {"uv": [0, 9, 1, 12], "texture": "#0"},
-                    "south": {"uv": [3, 9, 4, 12], "texture": "#0"},
-                    "west": {"uv": [2, 9, 3, 12], "texture": "#0"},
-                    "up": {"uv": [2, 9, 1, 8], "texture": "#0"},
-                    "down": {"uv": [3, 8, 2, 9], "texture": "#0"}
-                }
-            },
-            {
-                "from": [-3.9, 0, -2], "to": [0.1, 12, 2],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
-                "faces": {
-                    "north": {"uv": [5, 13, 6, 16], "texture": "#0"},
-                    "east": {"uv": [4, 13, 5, 16], "texture": "#0"},
-                    "south": {"uv": [7, 13, 8, 16], "texture": "#0"},
-                    "west": {"uv": [6, 13, 7, 16], "texture": "#0"},
-                    "up": {"uv": [6, 13, 5, 12], "texture": "#0"},
-                    "down": {"uv": [7, 12, 6, 13], "texture": "#0"}
-                }
-            },
-            {
-                "from": [-4.15, -0.25, -2.25], "to": [0.35, 12.25, 2.25],
-                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
-                "faces": {
-                    "north": {"uv": [1, 13, 2, 16], "texture": "#0"},
-                    "east": {"uv": [0, 13, 1, 16], "texture": "#0"},
-                    "south": {"uv": [3, 13, 4, 16], "texture": "#0"},
-                    "west": {"uv": [2, 13, 3, 16], "texture": "#0"},
-                    "up": {"uv": [2, 13, 1, 12], "texture": "#0"},
-                    "down": {"uv": [3, 12, 2, 13], "texture": "#0"}
-                }
-            }
-        ],
-        "display": {
-            "thirdperson_righthand": {"rotation": [0, 90, 0], "translation": [1.75, -0.25, 0.25], "scale": [0.2, 0.2, 0.2]},
-            "thirdperson_lefthand": {"rotation": [0, 90, 0], "translation": [1.75, -0.25, 3.5], "scale": [0.2, 0.2, 0.2]},
-            "firstperson_righthand": {"rotation": [0, 103, 0], "translation": [-0.5, 3, 2], "scale": [0.2, 0.2, 0.2]},
-            "firstperson_lefthand": {"rotation": [0, 103, 0], "translation": [0, 3, 5], "scale": [0.2, 0.2, 0.2]},
-            "ground": {"translation": [1.5, 0, 1.5], "scale": [0.19, 0.2, 0.2]},
-            "gui": {"rotation": [0, -180, 0], "translation": [-4.25, -4.25, 0], "scale": [0.5, 0.5, 0.49]},
-            "head": {"translation": [1.5, 8, -3], "scale": [0.2, 0.2, 0.2]},
-            "fixed": {"rotation": [-5, 0, 0], "translation": [3, -3, 2], "scale": [0.4, 0.4, 0.4]}
-        },
-        "groups": [
-            {
-                "name": "skin", "origin": [8, 8, 8],
-                "children": [
-                    {
-                        "name": "skin", "origin": [8, 8, 8],
-                        "children": [
-                            {
-                                "name": "skin", "origin": [8, 8, 8],
-                                "children": [
-                                    {"name": "Head", "origin": [0, 24, 0], "children": [0, 1]},
-                                    {"name": "Body", "origin": [0, 24, 0], "children": [2, 3]},
-                                    {"name": "RightArm", "origin": [5, 21.5, 0], "children": [4, 5]},
-                                    {"name": "LeftArm", "origin": [-5, 21.5, 0], "children": [6, 7]},
-                                    {"name": "RightLeg", "origin": [1.9, 12, 0], "children": [8, 9]},
-                                    {"name": "LeftLeg", "origin": [-1.9, 12, 0], "children": [10, 11]}
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    })
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn generate_totem_3d_models(pack_root: &Path) -> Result<(), String> {
-    use std::fs;
-    let models_dir = pack_root
-        .join("assets")
-        .join("minecraft")
-        .join("models")
-        .join("item");
-
-    fs::create_dir_all(&models_dir)
-        .map_err(|e| format!("Failed to create models directory: {e}"))?;
-
-    let totem_model = get_totem_model_json();
-    let skin_model = get_skin_model_json();
-
-    let totem_json_str = serde_json::to_string_pretty(&totem_model)
-        .map_err(|e| format!("Failed to serialize totem model: {e}"))?;
-    fs::write(models_dir.join("totem_of_undying.json"), totem_json_str)
-        .map_err(|e| format!("Failed to write totem_of_undying.json: {e}"))?;
-
-    let skin_json_str = serde_json::to_string_pretty(&skin_model)
-        .map_err(|e| format!("Failed to serialize skin model: {e}"))?;
-    fs::write(models_dir.join("skin.json"), skin_json_str)
-        .map_err(|e| format!("Failed to write skin.json: {e}"))?;
-
-    Ok(())
-}
-
-
-// ======================================================================// FILE: src\core\mojang_api.rs// ======================================================================
-use image::{ImageReader, RgbaImage};
-use std::io::Cursor;
-
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Duration;
-
-#[cfg(not(target_arch = "wasm32"))]
-use base64::Engine;
-#[cfg(not(target_arch = "wasm32"))]
-use serde::Deserialize;
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Deserialize)]
-struct MojangProfile {
-    id: String,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Deserialize)]
-struct SessionProperty {
-    name: String,
-    value: String,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Deserialize)]
-struct SessionProfile {
-    properties: Vec<SessionProperty>,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Deserialize)]
-struct SkinTextureInfo {
-    url: String,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Deserialize)]
-struct TexturesContainer {
-    #[serde(rename = "SKIN")]
-    skin: Option<SkinTextureInfo>,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Deserialize)]
-struct TexturePayload {
-    textures: TexturesContainer,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn fetch_skin_by_username(username: &str) -> Result<RgbaImage, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(8))
-        .user_agent("TotemWorkshopPro/1.0")
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    // Step 1: Query Mojang profile for UUID
-    let profile_url = format!("https://api.mojang.com/users/profiles/minecraft/{username}");
-    let resp = client.get(&profile_url).send();
-
-    if let Ok(resp) = resp {
-        if resp.status().is_success() {
-            if let Ok(profile) = resp.json::<MojangProfile>() {
-                // Step 2: Query session server for textures
-                let session_url = format!(
-                    "https://sessionserver.mojang.com/session/minecraft/profile/{}",
-                    profile.id
-                );
-                if let Ok(s_resp) = client.get(&session_url).send() {
-                    if s_resp.status().is_success() {
-                        if let Ok(session) = s_resp.json::<SessionProfile>() {
-                            if let Some(prop) = session.properties.iter().find(|p| p.name == "textures") {
-                                if let Ok(decoded_bytes) =
-                                    base64::engine::general_purpose::STANDARD.decode(&prop.value)
-                                {
-                                    if let Ok(payload) =
-                                        serde_json::from_slice::<TexturePayload>(&decoded_bytes)
-                                    {
-                                        if let Some(skin_info) = payload.textures.skin {
-                                            if let Ok(img_resp) = client.get(&skin_info.url).send() {
-                                                if let Ok(bytes) = img_resp.bytes() {
-                                                    if let Ok(img) = ImageReader::new(Cursor::new(bytes))
-                                                        .with_guessed_format()
-                                                        .map_err(|e| e.to_string())?
-                                                        .decode()
-                                                    {
-                                                        return Ok(normalize_skin_format(img.to_rgba8()));
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Fallback 1: Minotar
-    let fallback_url = format!("https://minotar.net/skin/{username}");
-    if let Ok(resp) = client.get(&fallback_url).send() {
-        if resp.status().is_success() {
-            if let Ok(bytes) = resp.bytes() {
-                if let Ok(img) = ImageReader::new(Cursor::new(bytes))
-                    .with_guessed_format()
-                    .map_err(|e| e.to_string())?
-                    .decode()
-                {
-                    return Ok(normalize_skin_format(img.to_rgba8()));
-                }
-            }
-        }
-    }
-
-    Err(format!("Could not fetch skin for user '{username}'. Please verify the username or internet connection."))
-}
-
-#[cfg(target_arch = "wasm32")]
-pub async fn fetch_skin_by_username_wasm(username: &str) -> Result<RgbaImage, String> {
-    // In browser, Minotar has open CORS headers allowing cross-origin skin fetches
-    let fallback_url = format!("https://minotar.net/skin/{username}");
-    let resp = reqwest::get(&fallback_url)
-        .await
-        .map_err(|e| format!("Network request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Could not find player '{username}' on skin servers."));
-    }
-
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    let img = ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()
-        .map_err(|e| e.to_string())?
-        .decode()
-        .map_err(|e| e.to_string())?;
-
-    Ok(normalize_skin_format(img.to_rgba8()))
-}
-
-/// Ensures skin is 64x64 RGBA (converts classic 64x32 skins to 64x64)
-pub fn normalize_skin_format(skin: RgbaImage) -> RgbaImage {
-    let (w, h) = (skin.width(), skin.height());
-    if w == 64 && h == 64 {
-        return skin;
-    }
-
-    let mut normalized = RgbaImage::new(64, 64);
-    image::imageops::overlay(&mut normalized, &skin, 0, 0);
-    normalized
-}
-
-
-// ======================================================================// FILE: src\core\pack_builder.rs// ======================================================================
-use crate::types::TotemMode;
-#[cfg(not(target_arch = "wasm32"))]
-use image::imageops;
-use image::RgbaImage;
-use serde_json::json;
-use std::io::Cursor;
-use std::path::PathBuf;
-
-pub struct PackMetaOptions {
-    pub output_dir: PathBuf,
-    pub pack_name: String,
-    pub description: String,
-    pub pack_format: u32,
-    pub icon_path: Option<PathBuf>,
-    pub sound_path: Option<PathBuf>,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub struct PackPaths {
-    pub root: PathBuf,
-    pub item_textures: PathBuf,
-    #[allow(dead_code)]
-    pub item_sounds: PathBuf,
-}
-
-pub fn sanitize_folder_name(name: &str) -> String {
-    let forbidden = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
-    let cleaned: String = name.chars().filter(|c| !forbidden.contains(c)).collect();
-    let trimmed = cleaned.trim();
-    if trimmed.is_empty() {
-        "TotemPack".to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn prepare_pack_structure(opts: &PackMetaOptions) -> Result<PackPaths, String> {
-    use std::fs;
-
-    let folder_name = sanitize_folder_name(&opts.pack_name);
-    let root = opts.output_dir.join(folder_name);
-
-    if root.exists() {
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    let item_textures = root.join("assets").join("minecraft").join("textures").join("item");
-    let item_sounds = root.join("assets").join("minecraft").join("sounds").join("item").join("totem");
-
-    fs::create_dir_all(&item_textures)
-        .map_err(|e| format!("Failed to create texture directory: {e}"))?;
-
-    // Write pack.mcmeta
-    let mcmeta = json!({
-        "pack": {
-            "pack_format": opts.pack_format,
-            "description": if opts.description.trim().is_empty() {
-                "Totem Workshop Pack"
-            } else {
-                opts.description.trim()
-            }
-        }
-    });
-
-    let mcmeta_str = serde_json::to_string_pretty(&mcmeta)
-        .map_err(|e| format!("Failed to serialize pack.mcmeta: {e}"))?;
-    fs::write(root.join("pack.mcmeta"), mcmeta_str)
-        .map_err(|e| format!("Failed to write pack.mcmeta: {e}"))?;
-
-    // Handle pack icon
-    if let Some(ref icon_p) = opts.icon_path {
-        if icon_p.exists() {
-            if let Ok(img) = image::open(icon_p) {
-                let resized = imageops::resize(&img.to_rgba8(), 64, 64, imageops::FilterType::Lanczos3);
-                let _ = resized.save(root.join("pack.png"));
-            }
-        }
-    }
-
-    // Handle sound & sounds.json
-    if let Some(ref sound_p) = opts.sound_path {
-        if sound_p.exists() {
-            let dest_sound = item_sounds.join("use.ogg");
-            super::video_processor::process_audio_file(sound_p, &dest_sound)?;
-
-            let sounds_json = json!({
-                "item.totem.use": {
-                    "sounds": ["item/totem/use"]
-                }
-            });
-            let sounds_json_str = serde_json::to_string_pretty(&sounds_json)
-                .map_err(|e| format!("Failed to serialize sounds.json: {e}"))?;
-            let sounds_json_path = root.join("assets").join("minecraft").join("sounds.json");
-            let _ = fs::write(sounds_json_path, sounds_json_str);
-        }
-    }
-
-    Ok(PackPaths {
-        root,
-        item_textures,
-        item_sounds,
-    })
-}
-
-/// Builds an in-memory ZIP archive of the resource pack (compatible with Minecraft drag & drop)
-pub fn build_pack_zip_buffer(
-    opts: &PackMetaOptions,
-    texture: &RgbaImage,
-    mode: TotemMode,
-    animation_mcmeta: Option<&str>,
-    icon_bytes: Option<&[u8]>,
-    sound_bytes: Option<(&str, &[u8])>,
-) -> Result<Vec<u8>, String> {
-    use std::io::Write;
-    use zip::write::SimpleFileOptions;
-    use zip::ZipWriter;
-
-    let mut buf = Vec::new();
-    {
-        let mut zip = ZipWriter::new(Cursor::new(&mut buf));
-        let file_opts = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-
-        // 1. pack.mcmeta
-        let mcmeta = json!({
-            "pack": {
-                "pack_format": opts.pack_format,
-                "description": if opts.description.trim().is_empty() {
-                    "Totem Workshop Pack"
-                } else {
-                    opts.description.trim()
-                }
-            }
-        });
-        zip.start_file("pack.mcmeta", file_opts).map_err(|e| e.to_string())?;
-        zip.write_all(serde_json::to_string_pretty(&mcmeta).unwrap().as_bytes())
-            .map_err(|e| e.to_string())?;
-
-        // 2. pack.png if icon provided
-        if let Some(ibytes) = icon_bytes {
-            if let Ok(img) = image::load_from_memory(ibytes) {
-                let resized = img.resize_exact(64, 64, image::imageops::FilterType::Nearest);
-                let mut icon_png = Vec::new();
-                if resized.write_to(&mut Cursor::new(&mut icon_png), image::ImageFormat::Png).is_ok() {
-                    let _ = zip.start_file("pack.png", file_opts);
-                    let _ = zip.write_all(&icon_png);
-                }
-            }
-        }
-
-        // 3. totem_of_undying.png
-        zip.start_file("assets/minecraft/textures/item/totem_of_undying.png", file_opts)
-            .map_err(|e| e.to_string())?;
-        let mut png_bytes = Vec::new();
-        texture.write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png)
-            .map_err(|e| e.to_string())?;
-        zip.write_all(&png_bytes).map_err(|e| e.to_string())?;
-
-        // 4. 3D models if in 3D mode
-        if mode == TotemMode::ThreeD {
-            zip.start_file("assets/minecraft/models/item/totem_of_undying.json", file_opts)
-                .map_err(|e| e.to_string())?;
-            let totem_m = crate::core::model_generator::get_totem_model_json();
-            zip.write_all(serde_json::to_string_pretty(&totem_m).unwrap().as_bytes())
-                .map_err(|e| e.to_string())?;
-
-            zip.start_file("assets/minecraft/models/item/skin.json", file_opts)
-                .map_err(|e| e.to_string())?;
-            let skin_m = crate::core::model_generator::get_skin_model_json();
-            zip.write_all(serde_json::to_string_pretty(&skin_m).unwrap().as_bytes())
-                .map_err(|e| e.to_string())?;
-        }
-
-        // 5. Animation mcmeta if present
-        if let Some(mcmeta_text) = animation_mcmeta {
-            zip.start_file("assets/minecraft/textures/item/totem_of_undying.png.mcmeta", file_opts)
-                .map_err(|e| e.to_string())?;
-            zip.write_all(mcmeta_text.as_bytes()).map_err(|e| e.to_string())?;
-        }
-
-        // 6. Sound file and sounds.json if sound provided
-        if let Some((_sound_name, sbytes)) = sound_bytes {
-            let _ = zip.start_file("assets/minecraft/sounds/item/totem/use.ogg", file_opts);
-            let _ = zip.write_all(sbytes);
-
-            let sounds_json = json!({
-                "item.totem.use": {
-                    "sounds": [
-                        { "name": "item/totem/use", "stream": false }
-                    ]
-                }
-            });
-            let _ = zip.start_file("assets/minecraft/sounds.json", file_opts);
-            let _ = zip.write_all(serde_json::to_string_pretty(&sounds_json).unwrap().as_bytes());
-        }
-
-        zip.finish().map_err(|e| e.to_string())?;
-    }
-
-    Ok(buf)
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn download_bytes_in_browser(filename: &str, bytes: &[u8]) -> Result<(), String> {
-    use wasm_bindgen::JsCast;
-    use web_sys::{Blob, BlobPropertyBag, HtmlAnchorElement, Url};
-
-    let window = web_sys::window().ok_or("No global window")?;
-    let document = window.document().ok_or("No document")?;
-
-    let uint8_array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
-    uint8_array.copy_from(bytes);
-
-    let parts = js_sys::Array::new();
-    parts.push(&uint8_array.buffer());
-
-    let bag = BlobPropertyBag::new();
-    bag.set_type("application/zip");
-
-    let blob = Blob::new_with_u8_array_sequence_and_options(&parts, &bag)
-        .map_err(|e| format!("{e:?}"))?;
-
-    let url = Url::create_object_url_with_blob(&blob)
-        .map_err(|e| format!("{e:?}"))?;
-
-    let anchor = document.create_element("a")
-        .map_err(|e| format!("{e:?}"))?
-        .dyn_into::<HtmlAnchorElement>()
-        .map_err(|e| format!("{e:?}"))?;
-
-    anchor.set_href(&url);
-    anchor.set_download(filename);
-    anchor.click();
-
-    let _ = Url::revoke_object_url(&url);
-    Ok(())
-}
-
-
-// ======================================================================// FILE: src\core\skin_processor.rs// ======================================================================
-use image::{imageops, Rgba, RgbaImage};
-
-/// Generates the standard 2D Totem of Undying texture (16x16) from a Minecraft skin.
-pub fn generate_2d_totem(skin: &RgbaImage) -> RgbaImage {
-    let mut totem = RgbaImage::new(16, 16);
-
-    // Crops from skin
-    let head = imageops::crop_imm(skin, 8, 8, 8, 8).to_image();
-    let body = imageops::crop_imm(skin, 20, 20, 8, 7).to_image();
-    let arm_r = imageops::crop_imm(skin, 44, 20, 4, 4).to_image();
-    let arm_l = imageops::crop_imm(skin, 36, 52, 4, 4).to_image();
-
-    // Overlays
-    let head_ov = imageops::crop_imm(skin, 40, 8, 8, 8).to_image();
-    let body_ov = imageops::crop_imm(skin, 20, 36, 8, 7).to_image();
-    let arm_r_ov = imageops::crop_imm(skin, 44, 36, 4, 4).to_image();
-    let arm_l_ov = imageops::crop_imm(skin, 52, 52, 4, 4).to_image();
-
-    // Base body layers
-    imageops::overlay(&mut totem, &arm_r, 0, 9);
-    imageops::overlay(&mut totem, &body, 4, 9);
-    imageops::overlay(&mut totem, &arm_l, 12, 9);
-    imageops::overlay(&mut totem, &head, 4, 1);
-
-    // Overlay layers (blended)
-    imageops::overlay(&mut totem, &head_ov, 4, 1);
-    imageops::overlay(&mut totem, &arm_r_ov, 0, 9);
-    imageops::overlay(&mut totem, &body_ov, 4, 9);
-    imageops::overlay(&mut totem, &arm_l_ov, 12, 9);
-
-    // Totem contour mask: clearing pixels to create iconic Minecraft Totem silhouette
-    let pixels_to_clear: &[(u32, u32)] = &[
-        (0, 10), (15, 10),
-        (0, 11), (1, 11), (14, 11), (15, 11),
-        (0, 12), (1, 12), (2, 12), (3, 12), (12, 12), (13, 12), (14, 12), (15, 12),
-        (4, 13), (11, 13),
-        (4, 14), (5, 14), (10, 14), (11, 14),
-        (4, 15), (5, 15), (10, 15), (11, 15),
-    ];
-
-    for &(x, y) in pixels_to_clear {
-        if x < 16 && y < 16 {
-            totem.put_pixel(x, y, Rgba([0, 0, 0, 0]));
-        }
-    }
-
-    totem
-}
-
-/// Generates a full 3D body standing preview (16x32) from the skin
-pub fn generate_3d_body_preview(skin: &RgbaImage) -> RgbaImage {
-    let mut preview = RgbaImage::new(16, 32);
-
-    let head = imageops::crop_imm(skin, 8, 8, 8, 8).to_image();
-    let body = imageops::crop_imm(skin, 20, 20, 8, 12).to_image();
-    let arm_r = imageops::crop_imm(skin, 44, 20, 4, 12).to_image();
-    let leg_r = imageops::crop_imm(skin, 4, 20, 4, 12).to_image();
-    let arm_l = imageops::crop_imm(skin, 36, 52, 4, 12).to_image();
-    let leg_l = imageops::crop_imm(skin, 20, 52, 4, 12).to_image();
-
-    // Base parts
-    imageops::overlay(&mut preview, &arm_r, 0, 8);
-    imageops::overlay(&mut preview, &body, 4, 8);
-    imageops::overlay(&mut preview, &arm_l, 12, 8);
-    imageops::overlay(&mut preview, &leg_r, 4, 20);
-    imageops::overlay(&mut preview, &leg_l, 8, 20);
-    imageops::overlay(&mut preview, &head, 4, 0);
-
-    // Overlays
-    let head_ov = imageops::crop_imm(skin, 40, 8, 8, 8).to_image();
-    let body_ov = imageops::crop_imm(skin, 20, 36, 8, 12).to_image();
-    let arm_r_ov = imageops::crop_imm(skin, 44, 36, 4, 12).to_image();
-    let arm_l_ov = imageops::crop_imm(skin, 52, 52, 4, 12).to_image();
-    let leg_r_ov = imageops::crop_imm(skin, 4, 36, 4, 12).to_image();
-    let leg_l_ov = imageops::crop_imm(skin, 4, 52, 4, 12).to_image();
-
-    imageops::overlay(&mut preview, &head_ov, 4, 0);
-    imageops::overlay(&mut preview, &arm_r_ov, 0, 8);
-    imageops::overlay(&mut preview, &body_ov, 4, 8);
-    imageops::overlay(&mut preview, &arm_l_ov, 12, 8);
-    imageops::overlay(&mut preview, &leg_r_ov, 4, 20);
-    imageops::overlay(&mut preview, &leg_l_ov, 8, 20);
-
-    preview
-}
-
-/// Rescales pixel art with Nearest Neighbor to retain crisp retro Minecraft pixels
-pub fn upscale_pixel_art(img: &RgbaImage, target_width: u32, target_height: u32) -> RgbaImage {
-    imageops::resize(img, target_width, target_height, imageops::FilterType::Nearest)
-}
-
-
-// ======================================================================// FILE: src\core\spritesheet.rs// ======================================================================
-use image::{imageops, RgbaImage};
-use serde_json::json;
-
-pub fn build_spritesheet(frames: &[RgbaImage], target_size: u32) -> RgbaImage {
-    let total_frames = frames.len() as u32;
-    let height = total_frames * target_size;
-    let mut spritesheet = RgbaImage::new(target_size, height);
-
-    for (i, frame) in frames.iter().enumerate() {
-        let y_offset = (i as u32) * target_size;
-        if frame.width() == target_size && frame.height() == target_size {
-            imageops::replace(&mut spritesheet, frame, 0, y_offset as i64);
-        } else {
-            let resized = imageops::resize(frame, target_size, target_size, imageops::FilterType::Lanczos3);
-            imageops::replace(&mut spritesheet, &resized, 0, y_offset as i64);
-        }
-    }
-
-    spritesheet
-}
-
-pub fn generate_animation_mcmeta(total_frames: usize, frametime: u32, interpolate: bool) -> serde_json::Value {
-    let frames_indices: Vec<usize> = (0..total_frames).collect();
-    json!({
-        "animation": {
-            "frametime": frametime,
-            "interpolate": interpolate,
-            "frames": frames_indices
-        }
-    })
-}
-
-
-// ======================================================================// FILE: src\core\video_processor.rs// ======================================================================
+// ======================================================================
+// FILE: src/core/video_processor.rs
+// ======================================================================
 use image::{Rgba, RgbaImage};
 #[cfg(not(target_arch = "wasm32"))]
 use image::imageops;
@@ -1775,7 +1484,862 @@ fn color_dist(a: Rgba<u8>, b: Rgba<u8>) -> f32 {
 }
 
 
-// ======================================================================// FILE: src\core\web_bridge.rs// ======================================================================
+// ======================================================================
+// FILE: src/core/skin_processor.rs
+// ======================================================================
+use image::{imageops, Rgba, RgbaImage};
+
+/// Generates the standard 2D Totem of Undying texture (16x16) from a Minecraft skin.
+pub fn generate_2d_totem(skin: &RgbaImage) -> RgbaImage {
+    let mut totem = RgbaImage::new(16, 16);
+
+    // Crops from skin
+    let head = imageops::crop_imm(skin, 8, 8, 8, 8).to_image();
+    let body = imageops::crop_imm(skin, 20, 20, 8, 7).to_image();
+    let arm_r = imageops::crop_imm(skin, 44, 20, 4, 4).to_image();
+    let arm_l = imageops::crop_imm(skin, 36, 52, 4, 4).to_image();
+
+    // Overlays
+    let head_ov = imageops::crop_imm(skin, 40, 8, 8, 8).to_image();
+    let body_ov = imageops::crop_imm(skin, 20, 36, 8, 7).to_image();
+    let arm_r_ov = imageops::crop_imm(skin, 44, 36, 4, 4).to_image();
+    let arm_l_ov = imageops::crop_imm(skin, 52, 52, 4, 4).to_image();
+
+    // Base body layers
+    imageops::overlay(&mut totem, &arm_r, 0, 9);
+    imageops::overlay(&mut totem, &body, 4, 9);
+    imageops::overlay(&mut totem, &arm_l, 12, 9);
+    imageops::overlay(&mut totem, &head, 4, 1);
+
+    // Overlay layers (blended)
+    imageops::overlay(&mut totem, &head_ov, 4, 1);
+    imageops::overlay(&mut totem, &arm_r_ov, 0, 9);
+    imageops::overlay(&mut totem, &body_ov, 4, 9);
+    imageops::overlay(&mut totem, &arm_l_ov, 12, 9);
+
+    // Totem contour mask: clearing pixels to create iconic Minecraft Totem silhouette
+    let pixels_to_clear: &[(u32, u32)] = &[
+        (0, 10), (15, 10),
+        (0, 11), (1, 11), (14, 11), (15, 11),
+        (0, 12), (1, 12), (2, 12), (3, 12), (12, 12), (13, 12), (14, 12), (15, 12),
+        (4, 13), (11, 13),
+        (4, 14), (5, 14), (10, 14), (11, 14),
+        (4, 15), (5, 15), (10, 15), (11, 15),
+    ];
+
+    for &(x, y) in pixels_to_clear {
+        if x < 16 && y < 16 {
+            totem.put_pixel(x, y, Rgba([0, 0, 0, 0]));
+        }
+    }
+
+    totem
+}
+
+/// Generates a full 3D body standing preview (16x32) from the skin
+pub fn generate_3d_body_preview(skin: &RgbaImage) -> RgbaImage {
+    let mut preview = RgbaImage::new(16, 32);
+
+    let head = imageops::crop_imm(skin, 8, 8, 8, 8).to_image();
+    let body = imageops::crop_imm(skin, 20, 20, 8, 12).to_image();
+    let arm_r = imageops::crop_imm(skin, 44, 20, 4, 12).to_image();
+    let leg_r = imageops::crop_imm(skin, 4, 20, 4, 12).to_image();
+    let arm_l = imageops::crop_imm(skin, 36, 52, 4, 12).to_image();
+    let leg_l = imageops::crop_imm(skin, 20, 52, 4, 12).to_image();
+
+    // Base parts
+    imageops::overlay(&mut preview, &arm_r, 0, 8);
+    imageops::overlay(&mut preview, &body, 4, 8);
+    imageops::overlay(&mut preview, &arm_l, 12, 8);
+    imageops::overlay(&mut preview, &leg_r, 4, 20);
+    imageops::overlay(&mut preview, &leg_l, 8, 20);
+    imageops::overlay(&mut preview, &head, 4, 0);
+
+    // Overlays
+    let head_ov = imageops::crop_imm(skin, 40, 8, 8, 8).to_image();
+    let body_ov = imageops::crop_imm(skin, 20, 36, 8, 12).to_image();
+    let arm_r_ov = imageops::crop_imm(skin, 44, 36, 4, 12).to_image();
+    let arm_l_ov = imageops::crop_imm(skin, 52, 52, 4, 12).to_image();
+    let leg_r_ov = imageops::crop_imm(skin, 4, 36, 4, 12).to_image();
+    let leg_l_ov = imageops::crop_imm(skin, 4, 52, 4, 12).to_image();
+
+    imageops::overlay(&mut preview, &head_ov, 4, 0);
+    imageops::overlay(&mut preview, &arm_r_ov, 0, 8);
+    imageops::overlay(&mut preview, &body_ov, 4, 8);
+    imageops::overlay(&mut preview, &arm_l_ov, 12, 8);
+    imageops::overlay(&mut preview, &leg_r_ov, 4, 20);
+    imageops::overlay(&mut preview, &leg_l_ov, 8, 20);
+
+    preview
+}
+
+/// Rescales pixel art with Nearest Neighbor to retain crisp retro Minecraft pixels
+pub fn upscale_pixel_art(img: &RgbaImage, target_width: u32, target_height: u32) -> RgbaImage {
+    imageops::resize(img, target_width, target_height, imageops::FilterType::Nearest)
+}
+
+
+// ======================================================================
+// FILE: src/core/model_generator.rs
+// ======================================================================
+use serde_json::json;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
+
+pub fn get_totem_model_json() -> serde_json::Value {
+    json!({
+        "parent": "minecraft:item/skin",
+        "textures": {
+            "layer0": "minecraft:item/totem_of_undying"
+        }
+    })
+}
+
+pub fn get_skin_model_json() -> serde_json::Value {
+    json!({
+        "texture_size": [64, 64],
+        "textures": { "0": "item/totem_of_undying" },
+        "elements": [
+            {
+                "from": [-4, 24, -4], "to": [4, 32, 4],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
+                "faces": {
+                    "north": {"uv": [2, 2, 4, 4], "texture": "#0"},
+                    "east": {"uv": [0, 2, 2, 4], "texture": "#0"},
+                    "south": {"uv": [6, 2, 8, 4], "texture": "#0"},
+                    "west": {"uv": [4, 2, 6, 4], "texture": "#0"},
+                    "up": {"uv": [4, 2, 2, 0], "texture": "#0"},
+                    "down": {"uv": [6, 0, 4, 2], "texture": "#0"}
+                }
+            },
+            {
+                "from": [-4.5, 23, -4.5], "to": [4.5, 32, 4.5],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
+                "faces": {
+                    "north": {"uv": [10, 2, 12, 4], "texture": "#0"},
+                    "east": {"uv": [8, 2, 10, 4], "texture": "#0"},
+                    "south": {"uv": [14, 2, 16, 4], "texture": "#0"},
+                    "west": {"uv": [12, 2, 14, 4], "texture": "#0"},
+                    "up": {"uv": [12, 2, 10, 0], "texture": "#0"},
+                    "down": {"uv": [14, 0, 12, 2], "texture": "#0"}
+                }
+            },
+            {
+                "from": [-4, 12, -2], "to": [4, 24, 2],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
+                "faces": {
+                    "north": {"uv": [5, 5, 7, 8], "texture": "#0"},
+                    "east": {"uv": [4, 5, 5, 8], "texture": "#0"},
+                    "south": {"uv": [8, 5, 10, 8], "texture": "#0"},
+                    "west": {"uv": [7, 5, 8, 8], "texture": "#0"},
+                    "up": {"uv": [7, 5, 5, 4], "texture": "#0"},
+                    "down": {"uv": [9, 4, 7, 5], "texture": "#0"}
+                }
+            },
+            {
+                "from": [-4.25, 11.75, -2.25], "to": [4.25, 24.25, 2.25],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
+                "faces": {
+                    "north": {"uv": [5, 9, 7, 12], "texture": "#0"},
+                    "east": {"uv": [4, 9, 5, 12], "texture": "#0"},
+                    "south": {"uv": [8, 9, 10, 12], "texture": "#0"},
+                    "west": {"uv": [7, 9, 8, 12], "texture": "#0"},
+                    "up": {"uv": [7, 9, 5, 8], "texture": "#0"},
+                    "down": {"uv": [9, 8, 7, 9], "texture": "#0"}
+                }
+            },
+            {
+                "from": [4, 12, -2], "to": [8, 24, 2],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0.5, 0]},
+                "faces": {
+                    "north": {"uv": [11, 5, 12, 8], "texture": "#0"},
+                    "east": {"uv": [10, 5, 11, 8], "texture": "#0"},
+                    "south": {"uv": [13, 5, 14, 8], "texture": "#0"},
+                    "west": {"uv": [12, 5, 13, 8], "texture": "#0"},
+                    "up": {"uv": [12, 5, 11, 4], "texture": "#0"},
+                    "down": {"uv": [13, 4, 12, 5], "texture": "#0"}
+                }
+            },
+            {
+                "from": [3.75, 11.75, -2.25], "to": [8.25, 24.25, 2.25],
+                "rotation": {"angle": 0, "axis": "y", "origin": [5.5, 18, 0]},
+                "faces": {
+                    "north": {"uv": [11, 9, 12, 12], "texture": "#0"},
+                    "east": {"uv": [10, 9, 11, 12], "texture": "#0"},
+                    "south": {"uv": [13, 9, 14, 12], "texture": "#0"},
+                    "west": {"uv": [12, 9, 13, 12], "texture": "#0"},
+                    "up": {"uv": [12, 9, 11, 8], "texture": "#0"},
+                    "down": {"uv": [13, 8, 12, 9], "texture": "#0"}
+                }
+            },
+            {
+                "from": [-8, 12, -2], "to": [-4, 24, 2],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0.5, 0]},
+                "faces": {
+                    "north": {"uv": [9, 13, 10, 16], "texture": "#0"},
+                    "east": {"uv": [8, 13, 9, 16], "texture": "#0"},
+                    "south": {"uv": [11, 13, 12, 16], "texture": "#0"},
+                    "west": {"uv": [10, 13, 11, 16], "texture": "#0"},
+                    "up": {"uv": [10, 13, 9, 12], "texture": "#0"},
+                    "down": {"uv": [11, 12, 10, 13], "texture": "#0"}
+                }
+            },
+            {
+                "from": [-8.25, 11.75, -2.25], "to": [-3.75, 24.25, 2.25],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0.5, 0]},
+                "faces": {
+                    "north": {"uv": [13, 13, 14, 16], "texture": "#0"},
+                    "east": {"uv": [12, 13, 13, 16], "texture": "#0"},
+                    "south": {"uv": [15, 13, 16, 16], "texture": "#0"},
+                    "west": {"uv": [14, 13, 15, 16], "texture": "#0"},
+                    "up": {"uv": [14, 13, 13, 12], "texture": "#0"},
+                    "down": {"uv": [15, 12, 14, 13], "texture": "#0"}
+                }
+            },
+            {
+                "from": [-0.1, 0, -2], "to": [3.9, 12, 2],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
+                "faces": {
+                    "north": {"uv": [1, 5, 2, 8], "texture": "#0"},
+                    "east": {"uv": [0, 5, 1, 8], "texture": "#0"},
+                    "south": {"uv": [3, 5, 4, 8], "texture": "#0"},
+                    "west": {"uv": [2, 5, 3, 8], "texture": "#0"},
+                    "up": {"uv": [2, 5, 1, 4], "texture": "#0"},
+                    "down": {"uv": [3, 4, 2, 5], "texture": "#0"}
+                }
+            },
+            {
+                "from": [-0.35, -0.25, -2.25], "to": [4.15, 12.25, 2.25],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
+                "faces": {
+                    "north": {"uv": [1, 9, 2, 12], "texture": "#0"},
+                    "east": {"uv": [0, 9, 1, 12], "texture": "#0"},
+                    "south": {"uv": [3, 9, 4, 12], "texture": "#0"},
+                    "west": {"uv": [2, 9, 3, 12], "texture": "#0"},
+                    "up": {"uv": [2, 9, 1, 8], "texture": "#0"},
+                    "down": {"uv": [3, 8, 2, 9], "texture": "#0"}
+                }
+            },
+            {
+                "from": [-3.9, 0, -2], "to": [0.1, 12, 2],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
+                "faces": {
+                    "north": {"uv": [5, 13, 6, 16], "texture": "#0"},
+                    "east": {"uv": [4, 13, 5, 16], "texture": "#0"},
+                    "south": {"uv": [7, 13, 8, 16], "texture": "#0"},
+                    "west": {"uv": [6, 13, 7, 16], "texture": "#0"},
+                    "up": {"uv": [6, 13, 5, 12], "texture": "#0"},
+                    "down": {"uv": [7, 12, 6, 13], "texture": "#0"}
+                }
+            },
+            {
+                "from": [-4.15, -0.25, -2.25], "to": [0.35, 12.25, 2.25],
+                "rotation": {"angle": 0, "axis": "y", "origin": [0, 0, 0]},
+                "faces": {
+                    "north": {"uv": [1, 13, 2, 16], "texture": "#0"},
+                    "east": {"uv": [0, 13, 1, 16], "texture": "#0"},
+                    "south": {"uv": [3, 13, 4, 16], "texture": "#0"},
+                    "west": {"uv": [2, 13, 3, 16], "texture": "#0"},
+                    "up": {"uv": [2, 13, 1, 12], "texture": "#0"},
+                    "down": {"uv": [3, 12, 2, 13], "texture": "#0"}
+                }
+            }
+        ],
+        "display": {
+            "thirdperson_righthand": {"rotation": [0, 90, 0], "translation": [1.75, -0.25, 0.25], "scale": [0.2, 0.2, 0.2]},
+            "thirdperson_lefthand": {"rotation": [0, 90, 0], "translation": [1.75, -0.25, 3.5], "scale": [0.2, 0.2, 0.2]},
+            "firstperson_righthand": {"rotation": [0, 103, 0], "translation": [-0.5, 3, 2], "scale": [0.2, 0.2, 0.2]},
+            "firstperson_lefthand": {"rotation": [0, 103, 0], "translation": [0, 3, 5], "scale": [0.2, 0.2, 0.2]},
+            "ground": {"translation": [1.5, 0, 1.5], "scale": [0.19, 0.2, 0.2]},
+            "gui": {"rotation": [0, -180, 0], "translation": [-4.25, -4.25, 0], "scale": [0.5, 0.5, 0.49]},
+            "head": {"translation": [1.5, 8, -3], "scale": [0.2, 0.2, 0.2]},
+            "fixed": {"rotation": [-5, 0, 0], "translation": [3, -3, 2], "scale": [0.4, 0.4, 0.4]}
+        },
+        "groups": [
+            {
+                "name": "skin", "origin": [8, 8, 8],
+                "children": [
+                    {
+                        "name": "skin", "origin": [8, 8, 8],
+                        "children": [
+                            {
+                                "name": "skin", "origin": [8, 8, 8],
+                                "children": [
+                                    {"name": "Head", "origin": [0, 24, 0], "children": [0, 1]},
+                                    {"name": "Body", "origin": [0, 24, 0], "children": [2, 3]},
+                                    {"name": "RightArm", "origin": [5, 21.5, 0], "children": [4, 5]},
+                                    {"name": "LeftArm", "origin": [-5, 21.5, 0], "children": [6, 7]},
+                                    {"name": "RightLeg", "origin": [1.9, 12, 0], "children": [8, 9]},
+                                    {"name": "LeftLeg", "origin": [-1.9, 12, 0], "children": [10, 11]}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn generate_totem_3d_models(pack_root: &Path) -> Result<(), String> {
+    use std::fs;
+    let models_dir = pack_root
+        .join("assets")
+        .join("minecraft")
+        .join("models")
+        .join("item");
+
+    fs::create_dir_all(&models_dir)
+        .map_err(|e| format!("Failed to create models directory: {e}"))?;
+
+    let totem_model = get_totem_model_json();
+    let skin_model = get_skin_model_json();
+
+    let totem_json_str = serde_json::to_string_pretty(&totem_model)
+        .map_err(|e| format!("Failed to serialize totem model: {e}"))?;
+    fs::write(models_dir.join("totem_of_undying.json"), totem_json_str)
+        .map_err(|e| format!("Failed to write totem_of_undying.json: {e}"))?;
+
+    let skin_json_str = serde_json::to_string_pretty(&skin_model)
+        .map_err(|e| format!("Failed to serialize skin model: {e}"))?;
+    fs::write(models_dir.join("skin.json"), skin_json_str)
+        .map_err(|e| format!("Failed to write skin.json: {e}"))?;
+
+    Ok(())
+}
+
+
+// ======================================================================
+// FILE: src/core/pack_builder.rs
+// ======================================================================
+use crate::types::TotemMode;
+#[cfg(not(target_arch = "wasm32"))]
+use image::imageops;
+use image::RgbaImage;
+use serde_json::json;
+use std::io::Cursor;
+use std::path::PathBuf;
+
+pub struct PackMetaOptions {
+    pub output_dir: PathBuf,
+    pub pack_name: String,
+    pub description: String,
+    pub pack_format: u32,
+    pub icon_path: Option<PathBuf>,
+    pub sound_path: Option<PathBuf>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub struct PackPaths {
+    pub root: PathBuf,
+    pub item_textures: PathBuf,
+    #[allow(dead_code)]
+    pub item_sounds: PathBuf,
+}
+
+pub fn sanitize_folder_name(name: &str) -> String {
+    let forbidden = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    let cleaned: String = name.chars().filter(|c| !forbidden.contains(c)).collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        "TotemPack".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn prepare_pack_structure(opts: &PackMetaOptions) -> Result<PackPaths, String> {
+    use std::fs;
+
+    let folder_name = sanitize_folder_name(&opts.pack_name);
+    let root = opts.output_dir.join(folder_name);
+
+    if root.exists() {
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    let item_textures = root.join("assets").join("minecraft").join("textures").join("item");
+    let item_sounds = root.join("assets").join("minecraft").join("sounds").join("item").join("totem");
+
+    fs::create_dir_all(&item_textures)
+        .map_err(|e| format!("Failed to create texture directory: {e}"))?;
+
+    // Write pack.mcmeta
+    let mcmeta = json!({
+        "pack": {
+            "pack_format": opts.pack_format,
+            "description": if opts.description.trim().is_empty() {
+                "Totem Workshop Pack"
+            } else {
+                opts.description.trim()
+            }
+        }
+    });
+
+    let mcmeta_str = serde_json::to_string_pretty(&mcmeta)
+        .map_err(|e| format!("Failed to serialize pack.mcmeta: {e}"))?;
+    fs::write(root.join("pack.mcmeta"), mcmeta_str)
+        .map_err(|e| format!("Failed to write pack.mcmeta: {e}"))?;
+
+    // Handle pack icon
+    if let Some(ref icon_p) = opts.icon_path {
+        if icon_p.exists() {
+            if let Ok(img) = image::open(icon_p) {
+                let resized = imageops::resize(&img.to_rgba8(), 64, 64, imageops::FilterType::Lanczos3);
+                let _ = resized.save(root.join("pack.png"));
+            }
+        }
+    }
+
+    // Handle sound & sounds.json
+    if let Some(ref sound_p) = opts.sound_path {
+        if sound_p.exists() {
+            let dest_sound = item_sounds.join("use.ogg");
+            super::video_processor::process_audio_file(sound_p, &dest_sound)?;
+
+            let sounds_json = json!({
+                "item.totem.use": {
+                    "sounds": ["item/totem/use"]
+                }
+            });
+            let sounds_json_str = serde_json::to_string_pretty(&sounds_json)
+                .map_err(|e| format!("Failed to serialize sounds.json: {e}"))?;
+            let sounds_json_path = root.join("assets").join("minecraft").join("sounds.json");
+            let _ = fs::write(sounds_json_path, sounds_json_str);
+        }
+    }
+
+    Ok(PackPaths {
+        root,
+        item_textures,
+        item_sounds,
+    })
+}
+
+/// Builds an in-memory ZIP archive of the resource pack (compatible with Minecraft drag & drop)
+pub fn build_pack_zip_buffer(
+    opts: &PackMetaOptions,
+    texture: &RgbaImage,
+    mode: TotemMode,
+    animation_mcmeta: Option<&str>,
+    icon_bytes: Option<&[u8]>,
+    sound_bytes: Option<(&str, &[u8])>,
+) -> Result<Vec<u8>, String> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
+
+    let mut buf = Vec::new();
+    {
+        let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+        let file_opts = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        // 1. pack.mcmeta
+        let mcmeta = json!({
+            "pack": {
+                "pack_format": opts.pack_format,
+                "description": if opts.description.trim().is_empty() {
+                    "Totem Workshop Pack"
+                } else {
+                    opts.description.trim()
+                }
+            }
+        });
+        zip.start_file("pack.mcmeta", file_opts).map_err(|e| e.to_string())?;
+        zip.write_all(serde_json::to_string_pretty(&mcmeta).unwrap().as_bytes())
+            .map_err(|e| e.to_string())?;
+
+        // 2. pack.png if icon provided
+        if let Some(ibytes) = icon_bytes {
+            if let Ok(img) = image::load_from_memory(ibytes) {
+                let resized = img.resize_exact(64, 64, image::imageops::FilterType::Nearest);
+                let mut icon_png = Vec::new();
+                if resized.write_to(&mut Cursor::new(&mut icon_png), image::ImageFormat::Png).is_ok() {
+                    let _ = zip.start_file("pack.png", file_opts);
+                    let _ = zip.write_all(&icon_png);
+                }
+            }
+        }
+
+        // 3. totem_of_undying.png
+        zip.start_file("assets/minecraft/textures/item/totem_of_undying.png", file_opts)
+            .map_err(|e| e.to_string())?;
+        let mut png_bytes = Vec::new();
+        texture.write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(&png_bytes).map_err(|e| e.to_string())?;
+
+        // 4. 3D models if in 3D mode
+        if mode == TotemMode::ThreeD {
+            zip.start_file("assets/minecraft/models/item/totem_of_undying.json", file_opts)
+                .map_err(|e| e.to_string())?;
+            let totem_m = crate::core::model_generator::get_totem_model_json();
+            zip.write_all(serde_json::to_string_pretty(&totem_m).unwrap().as_bytes())
+                .map_err(|e| e.to_string())?;
+
+            zip.start_file("assets/minecraft/models/item/skin.json", file_opts)
+                .map_err(|e| e.to_string())?;
+            let skin_m = crate::core::model_generator::get_skin_model_json();
+            zip.write_all(serde_json::to_string_pretty(&skin_m).unwrap().as_bytes())
+                .map_err(|e| e.to_string())?;
+        }
+
+        // 5. Animation mcmeta if present
+        if let Some(mcmeta_text) = animation_mcmeta {
+            zip.start_file("assets/minecraft/textures/item/totem_of_undying.png.mcmeta", file_opts)
+                .map_err(|e| e.to_string())?;
+            zip.write_all(mcmeta_text.as_bytes()).map_err(|e| e.to_string())?;
+        }
+
+        // 6. Sound file and sounds.json if sound provided
+        if let Some((_sound_name, sbytes)) = sound_bytes {
+            let _ = zip.start_file("assets/minecraft/sounds/item/totem/use.ogg", file_opts);
+            let _ = zip.write_all(sbytes);
+
+            let sounds_json = json!({
+                "item.totem.use": {
+                    "sounds": [
+                        { "name": "item/totem/use", "stream": false }
+                    ]
+                }
+            });
+            let _ = zip.start_file("assets/minecraft/sounds.json", file_opts);
+            let _ = zip.write_all(serde_json::to_string_pretty(&sounds_json).unwrap().as_bytes());
+        }
+
+        zip.finish().map_err(|e| e.to_string())?;
+    }
+
+    Ok(buf)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn download_bytes_in_browser(filename: &str, bytes: &[u8]) -> Result<(), String> {
+    use wasm_bindgen::JsCast;
+    use web_sys::{Blob, BlobPropertyBag, HtmlAnchorElement, Url};
+
+    let window = web_sys::window().ok_or("No global window")?;
+    let document = window.document().ok_or("No document")?;
+
+    let uint8_array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
+    uint8_array.copy_from(bytes);
+
+    let parts = js_sys::Array::new();
+    parts.push(&uint8_array.buffer());
+
+    let bag = BlobPropertyBag::new();
+    bag.set_type("application/zip");
+
+    let blob = Blob::new_with_u8_array_sequence_and_options(&parts, &bag)
+        .map_err(|e| format!("{e:?}"))?;
+
+    let url = Url::create_object_url_with_blob(&blob)
+        .map_err(|e| format!("{e:?}"))?;
+
+    let anchor = document.create_element("a")
+        .map_err(|e| format!("{e:?}"))?
+        .dyn_into::<HtmlAnchorElement>()
+        .map_err(|e| format!("{e:?}"))?;
+
+    anchor.set_href(&url);
+    anchor.set_download(filename);
+    anchor.click();
+
+    let _ = Url::revoke_object_url(&url);
+    Ok(())
+}
+
+
+// ======================================================================
+// FILE: src/core/spritesheet.rs
+// ======================================================================
+use image::{imageops, RgbaImage};
+use serde_json::json;
+
+pub fn build_spritesheet(frames: &[RgbaImage], target_size: u32) -> RgbaImage {
+    let total_frames = frames.len() as u32;
+    let height = total_frames * target_size;
+    let mut spritesheet = RgbaImage::new(target_size, height);
+
+    for (i, frame) in frames.iter().enumerate() {
+        let y_offset = (i as u32) * target_size;
+        if frame.width() == target_size && frame.height() == target_size {
+            imageops::replace(&mut spritesheet, frame, 0, y_offset as i64);
+        } else {
+            let resized = imageops::resize(frame, target_size, target_size, imageops::FilterType::Lanczos3);
+            imageops::replace(&mut spritesheet, &resized, 0, y_offset as i64);
+        }
+    }
+
+    spritesheet
+}
+
+pub fn generate_animation_mcmeta(total_frames: usize, frametime: u32, interpolate: bool) -> serde_json::Value {
+    let frames_indices: Vec<usize> = (0..total_frames).collect();
+    json!({
+        "animation": {
+            "frametime": frametime,
+            "interpolate": interpolate,
+            "frames": frames_indices
+        }
+    })
+}
+
+
+// ======================================================================
+// FILE: src/core/audio_converter.rs
+// ======================================================================
+use std::io::Cursor;
+use ogg::writing::{PacketWriter, PacketWriteEndInfo};
+use rusty_vorbis::{VorbisEncoder, VorbisEncoderConfig};
+
+/// Checks whether the audio bytes already start with the Ogg container magic header "OggS".
+pub fn is_ogg(data: &[u8]) -> bool {
+    data.len() >= 4 && &data[0..4] == b"OggS"
+}
+
+/// Encodes raw interleaved 32-bit float PCM samples to a valid Ogg Vorbis byte vector.
+pub fn encode_pcm_to_ogg(
+    interleaved_pcm: &[f32],
+    channels: u16,
+    sample_rate: u32,
+) -> Result<Vec<u8>, String> {
+    if interleaved_pcm.is_empty() || channels == 0 || sample_rate == 0 {
+        return Err("Invalid PCM input: empty or zero channels/sample_rate".to_string());
+    }
+
+    // Vorbis encoder profile is configured for stereo (2 channels).
+    // Normalize mono or multi-channel audio to standard stereo:
+    let (stereo_pcm, enc_channels) = if channels == 1 {
+        let mut stereo = Vec::with_capacity(interleaved_pcm.len() * 2);
+        for &sample in interleaved_pcm {
+            stereo.push(sample);
+            stereo.push(sample);
+        }
+        (stereo, 2u16)
+    } else if channels > 2 {
+        let n_frames = interleaved_pcm.len() / channels as usize;
+        let mut stereo = Vec::with_capacity(n_frames * 2);
+        for frame in 0..n_frames {
+            stereo.push(interleaved_pcm[frame * channels as usize]);
+            stereo.push(interleaved_pcm[frame * channels as usize + 1]);
+        }
+        (stereo, 2u16)
+    } else {
+        (interleaved_pcm.to_vec(), channels)
+    };
+
+    let mut enc = VorbisEncoder::new(VorbisEncoderConfig::default());
+    enc.push_pcm_f32(&stereo_pcm, enc_channels, sample_rate)
+        .map_err(|e| format!("VorbisEncoder push error: {e:?}"))?;
+    enc.finish();
+
+    let mut out = Vec::new();
+    let serial = 0x544F544D; // "TOTM" serial number for stream
+    let mut writer = PacketWriter::new(Cursor::new(&mut out));
+
+    let mut packets = Vec::new();
+    while let Ok(pkt) = enc.next_packet() {
+        packets.push(pkt);
+    }
+
+    if packets.is_empty() {
+        return Err("No Vorbis packets were produced by the encoder.".to_string());
+    }
+
+    let total = packets.len();
+    for (i, pkt) in packets.into_iter().enumerate() {
+        let absgp = pkt.pts.max(0) as u64;
+        let end_info = if i == 0 {
+            // First header packet (ident) must be in its own page per Vorbis spec
+            PacketWriteEndInfo::EndPage
+        } else if i == 1 {
+            // Second header packet (comment)
+            PacketWriteEndInfo::NormalPacket
+        } else if i == 2 {
+            // Third header packet (setup) finishes the header pages
+            PacketWriteEndInfo::EndPage
+        } else if i == total - 1 {
+            // Last audio packet ends the stream
+            PacketWriteEndInfo::EndStream
+        } else {
+            PacketWriteEndInfo::NormalPacket
+        };
+
+        writer
+            .write_packet(pkt.data, serial, end_info, absgp)
+            .map_err(|e| format!("Ogg write packet error: {e:?}"))?;
+    }
+
+    Ok(out)
+}
+
+
+// ======================================================================
+// FILE: src/core/mojang_api.rs
+// ======================================================================
+use image::{ImageReader, RgbaImage};
+use std::io::Cursor;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
+
+#[cfg(not(target_arch = "wasm32"))]
+use base64::Engine;
+#[cfg(not(target_arch = "wasm32"))]
+use serde::Deserialize;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize)]
+struct MojangProfile {
+    id: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize)]
+struct SessionProperty {
+    name: String,
+    value: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize)]
+struct SessionProfile {
+    properties: Vec<SessionProperty>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize)]
+struct SkinTextureInfo {
+    url: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize)]
+struct TexturesContainer {
+    #[serde(rename = "SKIN")]
+    skin: Option<SkinTextureInfo>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Deserialize)]
+struct TexturePayload {
+    textures: TexturesContainer,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn fetch_skin_by_username(username: &str) -> Result<RgbaImage, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .user_agent("TotemWorkshopPro/1.0")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Step 1: Query Mojang profile for UUID
+    let profile_url = format!("https://api.mojang.com/users/profiles/minecraft/{username}");
+    let resp = client.get(&profile_url).send();
+
+    if let Ok(resp) = resp {
+        if resp.status().is_success() {
+            if let Ok(profile) = resp.json::<MojangProfile>() {
+                // Step 2: Query session server for textures
+                let session_url = format!(
+                    "https://sessionserver.mojang.com/session/minecraft/profile/{}",
+                    profile.id
+                );
+                if let Ok(s_resp) = client.get(&session_url).send() {
+                    if s_resp.status().is_success() {
+                        if let Ok(session) = s_resp.json::<SessionProfile>() {
+                            if let Some(prop) = session.properties.iter().find(|p| p.name == "textures") {
+                                if let Ok(decoded_bytes) =
+                                    base64::engine::general_purpose::STANDARD.decode(&prop.value)
+                                {
+                                    if let Ok(payload) =
+                                        serde_json::from_slice::<TexturePayload>(&decoded_bytes)
+                                    {
+                                        if let Some(skin_info) = payload.textures.skin {
+                                            if let Ok(img_resp) = client.get(&skin_info.url).send() {
+                                                if let Ok(bytes) = img_resp.bytes() {
+                                                    if let Ok(img) = ImageReader::new(Cursor::new(bytes))
+                                                        .with_guessed_format()
+                                                        .map_err(|e| e.to_string())?
+                                                        .decode()
+                                                    {
+                                                        return Ok(normalize_skin_format(img.to_rgba8()));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback 1: Minotar
+    let fallback_url = format!("https://minotar.net/skin/{username}");
+    if let Ok(resp) = client.get(&fallback_url).send() {
+        if resp.status().is_success() {
+            if let Ok(bytes) = resp.bytes() {
+                if let Ok(img) = ImageReader::new(Cursor::new(bytes))
+                    .with_guessed_format()
+                    .map_err(|e| e.to_string())?
+                    .decode()
+                {
+                    return Ok(normalize_skin_format(img.to_rgba8()));
+                }
+            }
+        }
+    }
+
+    Err(format!("Could not fetch skin for user '{username}'. Please verify the username or internet connection."))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn fetch_skin_by_username_wasm(username: &str) -> Result<RgbaImage, String> {
+    // In browser, Minotar has open CORS headers allowing cross-origin skin fetches
+    let fallback_url = format!("https://minotar.net/skin/{username}");
+    let resp = reqwest::get(&fallback_url)
+        .await
+        .map_err(|e| format!("Network request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Could not find player '{username}' on skin servers."));
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    let img = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())?;
+
+    Ok(normalize_skin_format(img.to_rgba8()))
+}
+
+/// Ensures skin is 64x64 RGBA (converts classic 64x32 skins to 64x64)
+pub fn normalize_skin_format(skin: RgbaImage) -> RgbaImage {
+    let (w, h) = (skin.width(), skin.height());
+    if w == 64 && h == 64 {
+        return skin;
+    }
+
+    let mut normalized = RgbaImage::new(64, 64);
+    image::imageops::overlay(&mut normalized, &skin, 0, 0);
+    normalized
+}
+
+
+// ======================================================================
+// FILE: src/core/web_bridge.rs
+// ======================================================================
 #[cfg(target_arch = "wasm32")]
 use image::RgbaImage;
 #[cfg(target_arch = "wasm32")]
@@ -1925,7 +2489,101 @@ pub async fn probe_video_web(video_bytes: &[u8]) -> Option<(f32, usize, f32)> {
 }
 
 
-// ======================================================================// FILE: src\ui\animated_totem.rs// ======================================================================
+// ======================================================================
+// FILE: src/ui/dashboard.rs
+// ======================================================================
+use crate::types::AppPage;
+use crate::ui::widgets::{render_hero_card, render_signature};
+use egui::{Color32, CornerRadius, RichText, Stroke, StrokeKind, Ui, Vec2};
+
+pub fn render_dashboard(ui: &mut Ui, current_page: &mut AppPage) {
+    ui.vertical_centered(|ui| {
+        ui.add_space(35.0);
+
+        // Version Chip
+        let (chip_rect, _) = ui.allocate_exact_size(Vec2::new(260.0, 26.0), egui::Sense::hover());
+        let painter = ui.painter();
+        painter.rect_filled(chip_rect, CornerRadius::same(13), Color32::from_rgb(20, 24, 35));
+        painter.rect_stroke(
+            chip_rect,
+            CornerRadius::same(13),
+            Stroke::new(1.0_f32, Color32::from_rgb(45, 55, 80)),
+            StrokeKind::Inside,
+        );
+        painter.text(
+            chip_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "⚡ MINECRAFT 1.12 - 1.21+ COMPATIBLE",
+            egui::FontId::proportional(10.5),
+            Color32::from_rgb(56, 189, 248),
+        );
+
+        ui.add_space(14.0);
+
+        // App Title
+        ui.label(
+            RichText::new("Totem Workshop Pro")
+                .size(42.0)
+                .strong()
+                .color(Color32::WHITE),
+        );
+
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("High-Performance Native Resource Pack Generator for Minecraft")
+                .size(14.0)
+                .color(Color32::from_rgb(148, 163, 184)),
+        );
+
+        ui.add_space(45.0);
+
+        // Cards Section
+        ui.horizontal(|ui| {
+            let card_size = Vec2::new(340.0, 250.0);
+            let total_width = card_size.x * 2.0 + 35.0;
+            let left_pad = ((ui.available_width() - total_width) / 2.0).max(0.0);
+            ui.add_space(left_pad);
+
+            // Card 1: Animated Totem
+            let anim_resp = render_hero_card(
+                ui,
+                "🎬",
+                "Animated Totem",
+                "Convert Videos into Dynamic Animated Totems",
+                &["FFmpeg", "ChromaKey", "Spritesheet"],
+                Color32::from_rgb(56, 189, 248),
+                card_size,
+            );
+            if anim_resp.clicked() {
+                *current_page = AppPage::AnimatedTotem;
+            }
+
+            ui.add_space(35.0);
+
+            // Card 2: Skin-Forge
+            let skin_resp = render_hero_card(
+                ui,
+                "🧊",
+                "Skin-Forge Studio",
+                "Craft 2D & 3D Totems from Minecraft Skins",
+                &["Mojang API", "2D Totem", "3D Models"],
+                Color32::from_rgb(34, 197, 94),
+                card_size,
+            );
+            if skin_resp.clicked() {
+                *current_page = AppPage::SkinForge;
+            }
+        });
+
+        ui.add_space(60.0);
+        render_signature(ui);
+    });
+}
+
+
+// ======================================================================
+// FILE: src/ui/animated_totem.rs
+// ======================================================================
 #[cfg(not(target_arch = "wasm32"))]
 use crate::config::{save_config, AppConfig};
 #[cfg(not(target_arch = "wasm32"))]
@@ -2847,104 +3505,9 @@ pub fn render_animated_totem(
 }
 
 
-// ======================================================================// FILE: src\ui\dashboard.rs// ======================================================================
-use crate::types::AppPage;
-use crate::ui::widgets::{render_hero_card, render_signature};
-use egui::{Color32, CornerRadius, RichText, Stroke, StrokeKind, Ui, Vec2};
-
-pub fn render_dashboard(ui: &mut Ui, current_page: &mut AppPage) {
-    ui.vertical_centered(|ui| {
-        ui.add_space(35.0);
-
-        // Version Chip
-        let (chip_rect, _) = ui.allocate_exact_size(Vec2::new(260.0, 26.0), egui::Sense::hover());
-        let painter = ui.painter();
-        painter.rect_filled(chip_rect, CornerRadius::same(13), Color32::from_rgb(20, 24, 35));
-        painter.rect_stroke(
-            chip_rect,
-            CornerRadius::same(13),
-            Stroke::new(1.0_f32, Color32::from_rgb(45, 55, 80)),
-            StrokeKind::Inside,
-        );
-        painter.text(
-            chip_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            "⚡ MINECRAFT 1.12 - 1.21+ COMPATIBLE",
-            egui::FontId::proportional(10.5),
-            Color32::from_rgb(56, 189, 248),
-        );
-
-        ui.add_space(14.0);
-
-        // App Title
-        ui.label(
-            RichText::new("Totem Workshop Pro")
-                .size(42.0)
-                .strong()
-                .color(Color32::WHITE),
-        );
-
-        ui.add_space(4.0);
-        ui.label(
-            RichText::new("High-Performance Native Resource Pack Generator for Minecraft")
-                .size(14.0)
-                .color(Color32::from_rgb(148, 163, 184)),
-        );
-
-        ui.add_space(45.0);
-
-        // Cards Section
-        ui.horizontal(|ui| {
-            let card_size = Vec2::new(340.0, 250.0);
-            let total_width = card_size.x * 2.0 + 35.0;
-            let left_pad = ((ui.available_width() - total_width) / 2.0).max(0.0);
-            ui.add_space(left_pad);
-
-            // Card 1: Animated Totem
-            let anim_resp = render_hero_card(
-                ui,
-                "🎬",
-                "Animated Totem",
-                "Convert Videos into Dynamic Animated Totems",
-                &["FFmpeg", "ChromaKey", "Spritesheet"],
-                Color32::from_rgb(56, 189, 248),
-                card_size,
-            );
-            if anim_resp.clicked() {
-                *current_page = AppPage::AnimatedTotem;
-            }
-
-            ui.add_space(35.0);
-
-            // Card 2: Skin-Forge
-            let skin_resp = render_hero_card(
-                ui,
-                "🧊",
-                "Skin-Forge Studio",
-                "Craft 2D & 3D Totems from Minecraft Skins",
-                &["Mojang API", "2D Totem", "3D Models"],
-                Color32::from_rgb(34, 197, 94),
-                card_size,
-            );
-            if skin_resp.clicked() {
-                *current_page = AppPage::SkinForge;
-            }
-        });
-
-        ui.add_space(60.0);
-        render_signature(ui);
-    });
-}
-
-
-// ======================================================================// FILE: src\ui\mod.rs// ======================================================================
-pub mod animated_totem;
-pub mod dashboard;
-pub mod skin_forge;
-pub mod widgets;
-
-
-// ======================================================================// FILE: src\ui\skin_forge.rs// ======================================================================
+// ======================================================================
+// FILE: src/ui/skin_forge.rs
+// ======================================================================
 #[cfg(not(target_arch = "wasm32"))]
 use crate::config::{save_config, AppConfig};
 #[cfg(not(target_arch = "wasm32"))]
@@ -3738,7 +4301,9 @@ pub fn render_skin_forge(
 }
 
 
-// ======================================================================// FILE: src\ui\widgets.rs// ======================================================================
+// ======================================================================
+// FILE: src/ui/widgets.rs
+// ======================================================================
 use crate::types::MC_COLORS;
 use egui::{Color32, CornerRadius, Response, RichText, Stroke, StrokeKind, Ui, Vec2};
 
@@ -4141,763 +4706,5 @@ pub fn render_pipeline_step(
         num_color,
     );
 }
-
-
-// ======================================================================// ==================== WEBASSEMBLY & WEB PLATFORM FILES ====================// ======================================================================
-
-<!-- ====================================================================== --><!-- FILE: index.html (WebAssembly Canvas, UI Styles & JS Bridge) --><!-- ====================================================================== -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <title>Totem Workshop Pro 🪽 | Web Edition</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <link data-trunk rel="rust" data-bin="totem_workshop" data-wasm-opt="0" />
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: #0d0f16;
-            color: #f1f5f9;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        #the_canvas_id {
-            width: 100% !important;
-            height: 100% !important;
-            display: block;
-            outline: none;
-        }
-        #loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 16px;
-            pointer-events: none;
-            user-select: none;
-        }
-        .spinner {
-            width: 48px;
-            height: 48px;
-            border: 4px solid rgba(56, 189, 248, 0.15);
-            border-radius: 50%;
-            border-top-color: #38bdf8;
-            animation: spin 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-        }
-        .loading-title {
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            color: #ffffff;
-        }
-        .loading-sub {
-            font-size: 13px;
-            color: #94a3b8;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>
-    <!-- MediaPipe AI Background Segmentation for Videos -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
-</head>
-<body>
-    <div id="loading">
-        <div class="spinner"></div>
-        <div class="loading-title">Totem Workshop Pro 🪽</div>
-        <div class="loading-sub">Initializing WebAssembly Engine...</div>
-    </div>
-    <canvas id="the_canvas_id"></canvas>
-    <script>
-        window.totemWeb = {
-            pickFile: function(accept) {
-                return new Promise((resolve) => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = accept;
-                    input.style.display = 'none';
-                    document.body.appendChild(input);
-
-                    let settled = false;
-                    const cleanup = () => {
-                        if (settled) return;
-                        settled = true;
-                        if (input.parentNode) {
-                            document.body.removeChild(input);
-                        }
-                        const canvas = document.getElementById('the_canvas_id');
-                        if (canvas) {
-                            canvas.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
-                            canvas.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
-                            canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-                        }
-                    };
-
-                    input.onchange = function(e) {
-                        const file = e.target.files && e.target.files[0];
-                        if (!file) {
-                            cleanup();
-                            resolve(null);
-                            return;
-                        }
-                        const reader = new FileReader();
-                        reader.onload = function(evt) {
-                            cleanup();
-                            resolve({
-                                name: file.name,
-                                bytes: new Uint8Array(evt.target.result)
-                            });
-                        };
-                        reader.onerror = function() {
-                            cleanup();
-                            resolve(null);
-                        };
-                        reader.readAsArrayBuffer(file);
-                    };
-
-                    input.oncancel = function() {
-                        cleanup();
-                        resolve(null);
-                    };
-
-                    window.addEventListener('focus', function onFocus() {
-                        window.removeEventListener('focus', onFocus);
-                        setTimeout(() => {
-                            if (!settled) {
-                                cleanup();
-                                resolve(null);
-                            }
-                        }, 400);
-                    }, { once: true });
-
-                    input.click();
-                });
-            },
-
-            probeVideo: function(videoBytes) {
-                return new Promise((resolve) => {
-                    try {
-                        let mime = 'video/mp4';
-                        if (videoBytes.length > 4) {
-                            if (videoBytes[0] === 0x1A && videoBytes[1] === 0x45 && videoBytes[2] === 0xDF && videoBytes[3] === 0xA3) {
-                                mime = 'video/webm';
-                            }
-                        }
-                        const blob = new Blob([videoBytes], { type: mime });
-                        const url = URL.createObjectURL(blob);
-                        const video = document.createElement('video');
-                        video.preload = 'metadata';
-                        video.muted = true;
-                        video.playsInline = true;
-                        video.src = url;
-
-                        const timer = setTimeout(() => {
-                            URL.revokeObjectURL(url);
-                            resolve(null);
-                        }, 4000);
-
-                        video.onloadedmetadata = () => {
-                            clearTimeout(timer);
-                            const duration = video.duration || 0;
-                            let fps = 30.0;
-                            try {
-                                const stream = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
-                                const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
-                                if (track && track.getSettings) {
-                                    const sFps = track.getSettings().frameRate;
-                                    if (sFps && sFps > 0) fps = sFps;
-                                }
-                            } catch(e) {}
-
-                            const totalFrames = Math.max(1, Math.round(duration * fps));
-                            URL.revokeObjectURL(url);
-                            resolve({ duration: duration, fps: fps, totalFrames: totalFrames });
-                        };
-                        video.onerror = () => {
-                            clearTimeout(timer);
-                            URL.revokeObjectURL(url);
-                            resolve(null);
-                        };
-                    } catch(e) {
-                        resolve(null);
-                    }
-                });
-            },
-
-            extractVideoFrames: function(videoBytes, targetFrames, targetSize, removeBackground, onProgress) {
-                return new Promise(async (resolve, reject) => {
-                    try {
-                        let mime = 'video/mp4';
-                        if (videoBytes.length > 4) {
-                            if (videoBytes[0] === 0x1A && videoBytes[1] === 0x45 && videoBytes[2] === 0xDF && videoBytes[3] === 0xA3) {
-                                mime = 'video/webm';
-                            } else if (videoBytes[0] === 0x4F && videoBytes[1] === 0x67 && videoBytes[2] === 0x67 && videoBytes[3] === 0x53) {
-                                mime = 'video/ogg';
-                            }
-                        }
-                        const blob = new Blob([videoBytes], { type: mime });
-                        const url = URL.createObjectURL(blob);
-                        const video = document.createElement('video');
-                        video.src = url;
-                        video.muted = true;
-                        video.playsInline = true;
-                        video.preload = 'auto';
-
-                        await new Promise((res, rej) => {
-                            video.onloadedmetadata = () => res();
-                            video.onerror = () => rej(new Error("Browser could not decode this video. Please ensure it is standard MP4, WebM, or MOV!"));
-                        });
-
-                        const duration = Math.max(0.1, video.duration || 1.0);
-                        const canvas = document.createElement('canvas');
-                        canvas.width = targetSize;
-                        canvas.height = targetSize;
-                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-                        const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = targetSize;
-                        tempCanvas.height = targetSize;
-                        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-
-                        // Initialize MediaPipe AI Selfie Segmenter if background removal is enabled
-                        let segmenter = null;
-                        if (removeBackground && window.SelfieSegmentation) {
-                            try {
-                                segmenter = new window.SelfieSegmentation({
-                                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
-                                });
-                                segmenter.setOptions({
-                                    modelSelection: 1, // 1: portrait / full subject model
-                                });
-                                await segmenter.initialize();
-                            } catch (e) {
-                                console.warn("SelfieSegmentation initialization failed, using algorithmic cutout:", e);
-                                segmenter = null;
-                            }
-                        }
-
-                        const frameCount = Math.max(1, targetFrames);
-                        const frames = [];
-                        const interval = duration / frameCount;
-
-                        for (let i = 0; i < frameCount; i++) {
-                            const time = Math.min(duration - 0.01, i * interval);
-                            video.currentTime = time;
-
-                            await new Promise((res) => {
-                                const onSeeked = () => {
-                                    video.removeEventListener('seeked', onSeeked);
-                                    res();
-                                };
-                                video.addEventListener('seeked', onSeeked);
-                            });
-
-                            const vw = video.videoWidth || targetSize;
-                            const vh = video.videoHeight || targetSize;
-                            const minDim = Math.min(vw, vh);
-                            const sx = (vw - minDim) / 2;
-                            const sy = (vh - minDim) / 2;
-
-                            tempCtx.clearRect(0, 0, targetSize, targetSize);
-                            tempCtx.drawImage(video, sx, sy, minDim, minDim, 0, 0, targetSize, targetSize);
-
-                            if (segmenter) {
-                                let maskImage = null;
-                                segmenter.onResults((results) => {
-                                    maskImage = results.segmentationMask;
-                                });
-                                await segmenter.send({ image: tempCanvas });
-
-                                if (maskImage) {
-                                    ctx.clearRect(0, 0, targetSize, targetSize);
-                                    ctx.drawImage(maskImage, 0, 0, targetSize, targetSize);
-                                    ctx.globalCompositeOperation = 'source-in';
-                                    ctx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
-                                    ctx.globalCompositeOperation = 'source-over';
-                                } else {
-                                    ctx.clearRect(0, 0, targetSize, targetSize);
-                                    ctx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
-                                }
-                            } else {
-                                ctx.clearRect(0, 0, targetSize, targetSize);
-                                ctx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
-                            }
-
-                            const imgData = ctx.getImageData(0, 0, targetSize, targetSize);
-                            frames.push(imgData.data);
-
-                            if (typeof onProgress === 'function') {
-                                onProgress((i + 1) / frameCount, `${i + 1} / ${frameCount}`);
-                            }
-                        }
-
-                        if (segmenter && typeof segmenter.close === 'function') {
-                            segmenter.close();
-                        }
-                        URL.revokeObjectURL(url);
-                        resolve(frames);
-                    } catch (err) {
-                        reject(err);
-                    }
-                });
-            },
-
-            decodeAudioToPcm: async function(audioBytes) {
-                try {
-                    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
-                    if (!AudioCtxClass) return null;
-                    const audioCtx = new AudioCtxClass();
-
-                    const buffer = audioBytes.buffer.slice(
-                        audioBytes.byteOffset,
-                        audioBytes.byteOffset + audioBytes.byteLength
-                    );
-
-                    const decoded = await audioCtx.decodeAudioData(buffer);
-                    const channels = decoded.numberOfChannels;
-                    const sampleRate = decoded.sampleRate;
-                    const length = decoded.length;
-
-                    const interleaved = new Float32Array(length * channels);
-                    for (let c = 0; c < channels; c++) {
-                        const chData = decoded.getChannelData(c);
-                        for (let i = 0; i < length; i++) {
-                            interleaved[i * channels + c] = chData[i];
-                        }
-                    }
-                    await audioCtx.close();
-
-                    return {
-                        channels: channels,
-                        sampleRate: sampleRate,
-                        pcm: interleaved
-                    };
-                } catch (err) {
-                    console.error("Audio decoding failed in browser:", err);
-                    return null;
-                }
-            }
-        };
-    </script>
-</body>
-</html>
-
-
-// ======================================================================// FILE: main.js// ======================================================================
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const electron_1 = require("electron");
-const main_1 = __importDefault(require("electron-log/main"));
-const ipcHandlers_1 = require("./ipcHandlers");
-const fs = __importStar(require("fs"));
-const crypto = __importStar(require("crypto"));
-const readline = __importStar(require("readline"));
-const utils_1 = require("./utils");
-const languageServer_1 = require("./languageServer");
-const updater_1 = require("./updater");
-const hostBridgeServer_1 = require("./hostBridgeServer");
-const constants_1 = require("./constants");
-const tray_1 = require("./tray");
-const storage_1 = require("./storage");
-const paths_1 = require("./paths");
-const menu_1 = require("./menu");
-const customScheme_1 = require("./customScheme");
-const settingsService_1 = require("./services/settingsService");
-const ideInstall_1 = require("./ideInstall");
-const gotTheLock = electron_1.app.requestSingleInstanceLock();
-if (!gotTheLock) {
-    electron_1.app.quit();
-    process.exit(0);
-}
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-let storageManager;
-let settingsService;
-let hasStartedMainApplication = false;
-let isQuitting = false;
-// Loopback HTTP server the language server uses to read update status and
-// request an update. Kept at module scope so it is not garbage collected.
-let hostBridgeServer;
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-// Driven by ELECTRON_OZONE_PLATFORM_HINT=headless env var.
-// This single env var both prevents GTK from crashing (Electron 33+)
-// and tells our code to skip createWindow().
-const HEADLESS = process.env.ELECTRON_OZONE_PLATFORM_HINT === 'headless';
-// When set, skip LS startup and load this URL directly (for dev iteration).
-const DEV_URL = process.env.DEV_URL;
-if (HEADLESS) {
-    electron_1.app.commandLine.appendSwitch('ozone-platform', 'headless');
-    electron_1.app.commandLine.appendSwitch('headless');
-    electron_1.app.commandLine.appendSwitch('disable-gpu');
-    electron_1.app.commandLine.appendSwitch('no-sandbox');
-}
-if (!electron_1.app.commandLine.hasSwitch('remote-debugging-port')) {
-    electron_1.app.commandLine.appendSwitch('remote-debugging-port', '0');
-}
-// ---------------------------------------------------------------------------
-// Application Lifecycle
-// ---------------------------------------------------------------------------
-let pendingDeepLink = null;
-function handleDeepLink(url) {
-    const wins = electron_1.BrowserWindow.getAllWindows();
-    // This block handles deep links when windows are already open.
-    if (wins.length > 0) {
-        if (wins[0].isMinimized()) {
-            wins[0].restore();
-        }
-        wins[0].show();
-        wins[0].focus();
-        electron_1.app.focus({ steal: true });
-        wins[0].webContents.send('deep-link', url);
-    }
-    else {
-        pendingDeepLink = url;
-    }
-}
-const PROTOCOL = electron_1.app
-    .getName()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-if (!electron_1.app.isDefaultProtocolClient(PROTOCOL)) {
-    electron_1.app.setAsDefaultProtocolClient(PROTOCOL);
-}
-electron_1.app.on('second-instance', (event, commandLine) => {
-    const wins = electron_1.BrowserWindow.getAllWindows();
-    if (wins.length > 0) {
-        if (wins[0].isMinimized()) {
-            wins[0].restore();
-        }
-        wins[0].show();
-        wins[0].focus();
-        electron_1.app.focus({ steal: true });
-    }
-    const url = commandLine.find((arg) => arg.startsWith(`${PROTOCOL}://`));
-    if (url) {
-        handleDeepLink(url);
-    }
-});
-(0, customScheme_1.registerCustomSchemes)();
-electron_1.app.on('open-url', (event, url) => {
-    event.preventDefault();
-    handleDeepLink(url);
-});
-/**
- * App entry point. Runs once Electron has finished initializing.
- * Validates the LS binary, frees the port if needed, spawns the LS,
- * and opens the initial browser window.
- */
-electron_1.app
-    .whenReady()
-    .then(async () => {
-    // Initialize electron-log and override console
-    main_1.default.initialize();
-    Object.assign(console, main_1.default.functions);
-    const storagePath = (0, paths_1.getAppStoragePath)();
-    storageManager = new storage_1.StorageManager(storagePath, settingsService_1.DEFAULTS);
-    settingsService = new settingsService_1.SettingsService(storageManager);
-    // Handle deep link URL from command line arguments (All platforms)
-    const deepLinkFromArg = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
-    if (deepLinkFromArg) {
-        console.log('Launched with deep link:', deepLinkFromArg);
-        pendingDeepLink = deepLinkFromArg;
-    }
-    // Register IPC handlers
-    (0, ipcHandlers_1.registerIpcHandlers)(storageManager);
-    electron_1.ipcMain.handle('deep-link:get-stored', () => {
-        const link = pendingDeepLink;
-        pendingDeepLink = null; // Clear after read
-        return link;
-    });
-    // Handle requests coming from custom schemes
-    (0, customScheme_1.registerCustomSchemeHandlers)();
-    // Set About panel options with LS CL
-    const cl = await (0, languageServer_1.getLsCL)();
-    electron_1.app.setAboutPanelOptions({
-        applicationVersion: electron_1.app.getVersion(),
-        version: cl || undefined,
-    });
-    // Pre-onboarding: check if we should offer to re-install the IDE.
-    // This runs before the LS starts so we can show a standalone wizard.
-    if (!HEADLESS) {
-        await (0, ideInstall_1.maybeShowIdeInstallWizard)(storageManager);
-    }
-    if (DEV_URL) {
-        console.log('Starting in dev mode with URL:', DEV_URL);
-        (0, utils_1.createWindow)(DEV_URL, storageManager);
-        hasStartedMainApplication = true;
-        return;
-    }
-    if (!fs.existsSync(languageServer_1.LS_BINARY)) {
-        const msg = `language_server binary not found at:\n${languageServer_1.LS_BINARY}\n\nPlease build set a valid location.`;
-        if (HEADLESS) {
-            console.error('ERROR:', msg);
-        }
-        else {
-            await electron_1.dialog.showErrorBox('Binary not found', msg);
-        }
-        electron_1.app.quit();
-        return;
-    }
-    const csrf = crypto.randomUUID();
-    console.log(`Starting app (v${electron_1.app.getVersion()}) with dynamic port…`);
-    // Start the host bridge server before the LS so we can hand it the URL
-    // and token. This lives in the main process (not the renderer) so it stays
-    // up in headless mode and after every window has been closed. It uses its
-    // own token — the renderer's CSRF token must not unlock ApplyUpdate.
-    try {
-        hostBridgeServer = await (0, hostBridgeServer_1.startHostBridgeServer)({
-            getUpdateStatus: updater_1.getHostUpdateStatus,
-            applyUpdate: updater_1.applyHostUpdate,
-        });
-        console.log(`Host bridge server listening on ${hostBridgeServer.url}`);
-    }
-    catch (err) {
-        // Non-fatal: the app is still usable, the LS just can't drive updates.
-        console.error('Failed to start host bridge server:', err.message);
-    }
-    let handle;
-    const targetPort = Number(process.env.JETSKI_LS_PORT) || constants_1.DYNAMIC_PORT;
-    try {
-        handle = await (0, languageServer_1.startAndMonitorLanguageServer)(targetPort, csrf, {
-            headless: HEADLESS,
-            hostBridgeUrl: hostBridgeServer?.url,
-            hostBridgeToken: hostBridgeServer?.token,
-            onPortChanged: (newPort) => {
-                const newUrl = `${constants_1.WINDOW_ORIGIN}:${newPort}/`;
-                console.log(`[Auto-Restart] Port changed! Reloading all windows with URL: ${newUrl}`);
-                // Apply cert trust
-                (0, languageServer_1.setupLocalCertTrust)();
-                if (!HEADLESS) {
-                    const windows = electron_1.BrowserWindow.getAllWindows();
-                    for (const win of windows) {
-                        void win.loadURL(newUrl);
-                    }
-                }
-            },
-        });
-    }
-    catch (err) {
-        const msg = err.message;
-        if (HEADLESS) {
-            console.error('Startup failed:', msg);
-        }
-        else {
-            await electron_1.dialog.showErrorBox('Startup failed', msg);
-        }
-        electron_1.app.quit();
-        return;
-    }
-    const url = `${constants_1.WINDOW_ORIGIN}:${handle.port}/`;
-    console.log('\n' + '='.repeat(60));
-    console.log(`  Local:       ${url}`);
-    console.log(`  LS Logs:     ${(0, paths_1.getLsLogPath)()}`);
-    console.log(`  Electron Logs: ${main_1.default.transports.file.getFile().path}`);
-    console.log('='.repeat(60) + '\n');
-    if (HEADLESS) {
-        // In headless mode, forward stdin to the Language Server to allow interaction via terminal.
-        const rl = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout,
-        });
-        rl.on('line', (line) => {
-            const lsProc = (0, languageServer_1.getLsProcess)();
-            if (lsProc && lsProc.stdin) {
-                lsProc.stdin.write(line + '\n');
-                console.log('-> Forwarded input to Language Server.');
-            }
-            else {
-                console.log('Language Server process is not running.');
-            }
-        });
-    }
-    // Initial window — opened once after the LS has successfully started.
-    if (!HEADLESS) {
-        (0, menu_1.setupApplicationMenu)(url);
-        (0, utils_1.createWindow)(url, storageManager);
-        if (electron_1.app.dock) {
-            const dockMenu = electron_1.Menu.buildFromTemplate([
-                {
-                    label: 'New Window',
-                    click: () => (0, utils_1.createWindow)(url, storageManager),
-                },
-            ]);
-            electron_1.app.dock.setMenu(dockMenu);
-        }
-        (0, tray_1.createTray)([
-            {
-                id: 'running-agents',
-                label: 'No agents running',
-                enabled: false,
-            },
-            { type: 'separator' },
-            {
-                label: `Open ${electron_1.app.getName()}`,
-                click: () => (0, utils_1.showOrCreateWindow)((0, languageServer_1.getLsPort)()),
-            },
-            {
-                label: 'Quit',
-                click: () => {
-                    // Triggers 'before-quit' to run graceful cleanup without confirmation.
-                    electron_1.app.quit();
-                },
-            },
-        ]);
-    }
-    // Start checking for app updates.
-    (0, updater_1.initAutoUpdater)(HEADLESS, settingsService);
-    hasStartedMainApplication = true;
-})
-    .catch(() => {
-    hasStartedMainApplication = true;
-});
-/**
- * Fired when all windows have been closed.
- * On macOS the app (and LS) stay alive so the user can re-open via the tray.
- * On all other platforms, shut down the LS and quit.
- */
-electron_1.app.on('window-all-closed', async () => {
-    if (isQuitting) {
-        return;
-    }
-    if (!hasStartedMainApplication) {
-        return;
-    }
-    const runInBackground = await settingsService.getSetting(settingsService_1.SettingKey.RUN_IN_BACKGROUND);
-    if (!runInBackground) {
-        // Triggers 'before-quit' to run graceful cleanup without confirmation.
-        electron_1.app.quit();
-    }
-    else {
-        electron_1.app.dock?.hide();
-    }
-});
-/** Shuts down the host bridge server, if it was started. */
-async function closeHostBridgeServer() {
-    if (!hostBridgeServer) {
-        return;
-    }
-    try {
-        await hostBridgeServer.close();
-    }
-    catch (err) {
-        console.error('Failed to close host bridge server:', err);
-    }
-    hostBridgeServer = undefined;
-}
-/**
- * Fired just before the app quits (e.g. Cmd+Q on macOS, or after
- * window-all-closed on non-macOS). Ensures the LS is terminated even if
- * window-all-closed didn't handle it (e.g. on macOS quit via menu).
- */
-electron_1.app.on('before-quit', async (event) => {
-    if (isQuitting) {
-        return;
-    }
-    if (!utils_1.showQuitConfirmation) {
-        event.preventDefault();
-        isQuitting = true;
-        // Destroy all windows to terminate renderers and release keep-alive sockets
-        const windows = electron_1.BrowserWindow.getAllWindows();
-        for (const win of windows) {
-            win.destroy();
-        }
-        // Close all active connections and kill the language server in parallel
-        await Promise.all([
-            electron_1.session.defaultSession.closeAllConnections().catch((err) => {
-                console.error('Failed to close session connections:', err);
-            }),
-            (0, languageServer_1.killLanguageServer)(),
-        ]);
-        // The host bridge server comes down last, in reverse order of startup: the
-        // language server is its only client, so closing it first would just drop
-        // in-flight requests and log errors on the way out.
-        await closeHostBridgeServer();
-        electron_1.app.quit();
-        return;
-    }
-    // Show a confirmation dialog before quitting
-    event.preventDefault();
-    const win = electron_1.BrowserWindow.getFocusedWindow() || electron_1.BrowserWindow.getAllWindows()[0];
-    const options = {
-        type: 'question',
-        buttons: ['Cancel', 'Quit'],
-        defaultId: 1,
-        cancelId: 0,
-        title: 'Confirm Quit',
-        message: 'Are you sure you want to quit?',
-        detail: 'There may be agents or background tasks running.',
-    };
-    (0, utils_1.setShowQuitConfirmation)(false);
-    if (win) {
-        void electron_1.dialog.showMessageBox(win, options).then((result) => {
-            if (result.response === 1) {
-                // Quit - this will retrigger 'before-quit'
-                electron_1.app.quit();
-            }
-        });
-    }
-});
-/**
- * Fired when the app is re-activated (e.g. clicking the dock icon on macOS).
- * Re-opens a window if none are currently open.
- */
-electron_1.app.on('activate', () => {
-    // On Mac, re-open a window when the user clicks the dock
-    // icon and no windows are open.
-    if (!HEADLESS && electron_1.BrowserWindow.getAllWindows().length === 0) {
-        const url = DEV_URL ?? `${constants_1.WINDOW_ORIGIN}:${(0, languageServer_1.getLsPort)()}/`;
-        (0, utils_1.createWindow)(url, storageManager);
-    }
-});
 
 

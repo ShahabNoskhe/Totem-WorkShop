@@ -3,5 +3,7 @@ target/
 *.rar
 *.log
 *.tmp
+*.onnx
+models/
 .DS_Store
 Thumbs.db

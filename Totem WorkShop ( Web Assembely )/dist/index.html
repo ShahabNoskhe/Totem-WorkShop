@@ -73,6 +73,8 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
     <!-- MediaPipe AI Background Segmentation for Videos -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+    <!-- ONNX Runtime Web for BiRefNet AI Neural Background Removal -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js" crossorigin="anonymous"></script>
 <link rel="modulepreload" href="/totem_workshop-a1f041689043b346.js" crossorigin="anonymous" integrity="sha384-qLJ1dzumb9d1E32DTjpH4BLNqJsNBlnMNzd1e0lzeY4Qhc/tT0LCzNt4F4R1NBin"><link rel="preload" href="/totem_workshop-a1f041689043b346_bg.wasm" crossorigin="anonymous" integrity="sha384-f4lPrBLPkpWSF1Ta3psfvHm/VkajoiJqBRcCWl0KdzNQTHo+QVil18OBWVqRvTQH" as="fetch" type="application/wasm"></head>
 <body>
     <div id="loading">
@@ -197,7 +199,184 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
                 });
             },
 
+            getOrFetchBiRefNetModel: async function(onProgress) {
+                const cacheKey = 'totem_birefnet_model_v1';
+                const modelUrl = 'https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx';
+
+                // Try CacheStorage first
+                if ('caches' in window) {
+                    try {
+                        const cache = await caches.open('totem-workshop-models');
+                        const match = await cache.match(cacheKey);
+                        if (match) {
+                            console.log('[BiRefNet] Found model in Browser CacheStorage!');
+                            return await match.arrayBuffer();
+                        }
+                    } catch(e) {
+                        console.warn('[BiRefNet] CacheStorage read failed:', e);
+                    }
+                }
+
+                // Check local ./models/ directory first, then CDN
+                let resp = null;
+                try {
+                    resp = await fetch('./models/birefnet-general-lite.onnx');
+                    if (!resp.ok) resp = null;
+                } catch(e) {}
+
+                if (!resp) {
+                    resp = await fetch(modelUrl);
+                }
+
+                if (!resp.ok) {
+                    throw new Error("Failed to download BiRefNet model from server or CDN");
+                }
+
+                const contentLength = +resp.headers.get('Content-Length') || 224005088;
+                const reader = resp.body.getReader();
+                let receivedLength = 0;
+                let chunks = [];
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    receivedLength += value.length;
+                    if (typeof onProgress === 'function') {
+                        const pct = receivedLength / contentLength;
+                        onProgress(pct * 0.4, `Loading AI Model: ${(receivedLength / (1024*1024)).toFixed(1)} MB / ${(contentLength / (1024*1024)).toFixed(1)} MB`);
+                    }
+                }
+
+                let allChunks = new Uint8Array(receivedLength);
+                let pos = 0;
+                for (let c of chunks) {
+                    allChunks.set(c, pos);
+                    pos += c.length;
+                }
+
+                const buffer = allChunks.buffer;
+
+                // Cache in CacheStorage for instant future loads
+                if ('caches' in window) {
+                    try {
+                        const cache = await caches.open('totem-workshop-models');
+                        await cache.put(cacheKey, new Response(buffer.slice(0), {
+                            headers: { 'Content-Type': 'application/octet-stream' }
+                        }));
+                    } catch(e) {}
+                }
+
+                return buffer;
+            },
+
+            initBiRefNetSession: async function(onProgress) {
+                if (this.biRefSession) return this.biRefSession;
+                if (this.isModelInitializing) {
+                    while (this.isModelInitializing) {
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                    return this.biRefSession;
+                }
+
+                this.isModelInitializing = true;
+                try {
+                    if (typeof ort === 'undefined') {
+                        console.warn("[BiRefNet] ONNX Runtime Web is not loaded");
+                        return null;
+                    }
+
+                    ort.env.wasm.numThreads = navigator.hardwareConcurrency ? Math.min(4, Math.max(1, navigator.hardwareConcurrency)) : 2;
+                    ort.env.wasm.simd = true;
+
+                    const modelBuffer = await this.getOrFetchBiRefNetModel(onProgress);
+
+                    if (typeof onProgress === 'function') {
+                        onProgress(0.42, "Compiling BiRefNet Neural Graph...");
+                    }
+
+                    this.biRefSession = await ort.InferenceSession.create(modelBuffer, {
+                        executionProviders: ['wasm'],
+                        graphOptimizationLevel: 'all'
+                    });
+                    console.log("[BiRefNet] Inference Session initialized successfully!");
+                    return this.biRefSession;
+                } catch(e) {
+                    console.warn("[BiRefNet] Session initialization failed:", e);
+                    return null;
+                } finally {
+                    this.isModelInitializing = false;
+                }
+            },
+
+            segmentBiRefNet: async function(session, sourceCanvas, targetSize) {
+                const modelDim = 1024;
+                const canvas1024 = document.createElement('canvas');
+                canvas1024.width = modelDim;
+                canvas1024.height = modelDim;
+                const ctx1024 = canvas1024.getContext('2d', { willReadFrequently: true });
+                ctx1024.drawImage(sourceCanvas, 0, 0, modelDim, modelDim);
+
+                const imgData = ctx1024.getImageData(0, 0, modelDim, modelDim);
+                const rgba = imgData.data;
+                const planeSize = modelDim * modelDim;
+
+                const float32Tensor = new Float32Array(3 * planeSize);
+                const meanR = 0.485, meanG = 0.456, meanB = 0.406;
+                const stdR = 0.229, stdG = 0.224, stdB = 0.225;
+
+                for (let i = 0; i < planeSize; i++) {
+                    const r = rgba[i * 4] / 255.0;
+                    const g = rgba[i * 4 + 1] / 255.0;
+                    const b = rgba[i * 4 + 2] / 255.0;
+
+                    float32Tensor[i] = (r - meanR) / stdR;
+                    float32Tensor[planeSize + i] = (g - meanG) / stdG;
+                    float32Tensor[planeSize * 2 + i] = (b - meanB) / stdB;
+                }
+
+                const inputTensor = new ort.Tensor('float32', float32Tensor, [1, 3, modelDim, modelDim]);
+                const inputName = session.inputNames[0];
+                const feeds = {};
+                feeds[inputName] = inputTensor;
+
+                const results = await session.run(feeds);
+                const outputName = session.outputNames[0];
+                const outputTensor = results[outputName];
+                const logits = outputTensor.data;
+
+                const maskCanvas = document.createElement('canvas');
+                maskCanvas.width = modelDim;
+                maskCanvas.height = modelDim;
+                const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+                const maskImgData = maskCtx.createImageData(modelDim, modelDim);
+                const maskBytes = maskImgData.data;
+
+                for (let i = 0; i < planeSize; i++) {
+                    const logit = logits[i];
+                    const alpha = 1.0 / (1.0 + Math.exp(-logit));
+                    const aByte = Math.round(alpha * 255);
+
+                    maskBytes[i * 4] = rgba[i * 4];
+                    maskBytes[i * 4 + 1] = rgba[i * 4 + 1];
+                    maskBytes[i * 4 + 2] = rgba[i * 4 + 2];
+                    maskBytes[i * 4 + 3] = aByte < 20 ? 0 : aByte;
+                }
+                maskCtx.putImageData(maskImgData, 0, 0);
+
+                const finalCanvas = document.createElement('canvas');
+                finalCanvas.width = targetSize;
+                finalCanvas.height = targetSize;
+                const finalCtx = finalCanvas.getContext('2d', { willReadFrequently: true });
+                finalCtx.imageSmoothingEnabled = true;
+                finalCtx.imageSmoothingQuality = 'high';
+                finalCtx.drawImage(maskCanvas, 0, 0, targetSize, targetSize);
+
+                return finalCtx.getImageData(0, 0, targetSize, targetSize).data;
+            },
+
             extractVideoFrames: function(videoBytes, targetFrames, targetSize, removeBackground, onProgress) {
+                const self = this;
                 return new Promise(async (resolve, reject) => {
                     try {
                         let mime = 'video/mp4';
@@ -222,36 +401,44 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
                         });
 
                         const duration = Math.max(0.1, video.duration || 1.0);
-                        const canvas = document.createElement('canvas');
-                        canvas.width = targetSize;
-                        canvas.height = targetSize;
-                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                        const frameCount = Math.max(1, targetFrames);
+                        const frames = [];
+                        const interval = duration / frameCount;
+
+                        let biRefSession = null;
+                        let selfieSegmenter = null;
+
+                        if (removeBackground) {
+                            if (typeof onProgress === 'function') {
+                                onProgress(0.02, "Initializing AI Background Removal...");
+                            }
+
+                            // 1. Try BiRefNet ONNX
+                            try {
+                                biRefSession = await self.initBiRefNetSession(onProgress);
+                            } catch(e) {
+                                console.warn("[AI] BiRefNet init failed, falling back:", e);
+                            }
+
+                            // 2. Fallback to MediaPipe Selfie Segmentation if BiRefNet not available
+                            if (!biRefSession && window.SelfieSegmentation) {
+                                try {
+                                    selfieSegmenter = new window.SelfieSegmentation({
+                                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+                                    });
+                                    selfieSegmenter.setOptions({ modelSelection: 1 });
+                                    await selfieSegmenter.initialize();
+                                } catch(e) {
+                                    console.warn("[AI] SelfieSegmentation fallback failed:", e);
+                                    selfieSegmenter = null;
+                                }
+                            }
+                        }
 
                         const tempCanvas = document.createElement('canvas');
                         tempCanvas.width = targetSize;
                         tempCanvas.height = targetSize;
                         const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-
-                        // Initialize MediaPipe AI Selfie Segmenter if background removal is enabled
-                        let segmenter = null;
-                        if (removeBackground && window.SelfieSegmentation) {
-                            try {
-                                segmenter = new window.SelfieSegmentation({
-                                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
-                                });
-                                segmenter.setOptions({
-                                    modelSelection: 1, // 1: portrait / full subject model
-                                });
-                                await segmenter.initialize();
-                            } catch (e) {
-                                console.warn("SelfieSegmentation initialization failed, using algorithmic cutout:", e);
-                                segmenter = null;
-                            }
-                        }
-
-                        const frameCount = Math.max(1, targetFrames);
-                        const frames = [];
-                        const interval = duration / frameCount;
 
                         for (let i = 0; i < frameCount; i++) {
                             const time = Math.min(duration - 0.01, i * interval);
@@ -274,38 +461,48 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
                             tempCtx.clearRect(0, 0, targetSize, targetSize);
                             tempCtx.drawImage(video, sx, sy, minDim, minDim, 0, 0, targetSize, targetSize);
 
-                            if (segmenter) {
+                            let frameData = null;
+
+                            if (biRefSession) {
+                                frameData = await self.segmentBiRefNet(biRefSession, tempCanvas, targetSize);
+                            } else if (selfieSegmenter) {
                                 let maskImage = null;
-                                segmenter.onResults((results) => {
+                                selfieSegmenter.onResults((results) => {
                                     maskImage = results.segmentationMask;
                                 });
-                                await segmenter.send({ image: tempCanvas });
+                                await selfieSegmenter.send({ image: tempCanvas });
+
+                                const outCanvas = document.createElement('canvas');
+                                outCanvas.width = targetSize;
+                                outCanvas.height = targetSize;
+                                const outCtx = outCanvas.getContext('2d', { willReadFrequently: true });
 
                                 if (maskImage) {
-                                    ctx.clearRect(0, 0, targetSize, targetSize);
-                                    ctx.drawImage(maskImage, 0, 0, targetSize, targetSize);
-                                    ctx.globalCompositeOperation = 'source-in';
-                                    ctx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
-                                    ctx.globalCompositeOperation = 'source-over';
+                                    outCtx.clearRect(0, 0, targetSize, targetSize);
+                                    outCtx.drawImage(maskImage, 0, 0, targetSize, targetSize);
+                                    outCtx.globalCompositeOperation = 'source-in';
+                                    outCtx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
+                                    outCtx.globalCompositeOperation = 'source-over';
                                 } else {
-                                    ctx.clearRect(0, 0, targetSize, targetSize);
-                                    ctx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
+                                    outCtx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
                                 }
+                                frameData = outCtx.getImageData(0, 0, targetSize, targetSize).data;
                             } else {
-                                ctx.clearRect(0, 0, targetSize, targetSize);
-                                ctx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
+                                frameData = tempCtx.getImageData(0, 0, targetSize, targetSize).data;
                             }
 
-                            const imgData = ctx.getImageData(0, 0, targetSize, targetSize);
-                            frames.push(imgData.data);
+                            frames.push(frameData);
 
                             if (typeof onProgress === 'function') {
-                                onProgress((i + 1) / frameCount, `${i + 1} / ${frameCount}`);
+                                const basePct = removeBackground && biRefSession ? 0.45 : 0.0;
+                                const remainingScale = 1.0 - basePct;
+                                const pct = basePct + ((i + 1) / frameCount) * remainingScale;
+                                onProgress(pct, `Processed frame ${i + 1} / ${frameCount}`);
                             }
                         }
 
-                        if (segmenter && typeof segmenter.close === 'function') {
-                            segmenter.close();
+                        if (selfieSegmenter && typeof selfieSegmenter.close === 'function') {
+                            selfieSegmenter.close();
                         }
                         URL.revokeObjectURL(url);
                         resolve(frames);
