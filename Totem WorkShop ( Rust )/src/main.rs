@@ -10,7 +10,7 @@ use totem_workshop::app::TotemWorkshopApp;
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("Totem Workshop Pro 🪽 | Created by @SirZigo")
+            .with_title("Totem Workshop Pro 🪽 | Created by @CanBeShahab")
             .with_inner_size(Vec2::new(1100.0, 800.0))
             .with_min_inner_size(Vec2::new(880.0, 650.0)),
         ..Default::default()

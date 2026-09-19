@@ -1,0 +1,8 @@
+﻿[Desktop Entry]
+Name=Totem Workshop Pro (Web)
+Comment=Minecraft Totem Web Studio
+Exec=sh -c "python3 -m http.server 8080 --directory dist & xdg-open http://localhost:8080"
+Icon=applications-internet
+Terminal=false
+Type=Application
+Categories=Game;Graphics;Network;

@@ -1,0 +1,9 @@
+﻿[Desktop Entry]
+Name=Totem Workshop Pro
+Comment=Minecraft Animated & 3D Skin Totem Resource Pack Creator
+Exec=totem-workshop
+Icon=applications-games
+Terminal=false
+Type=Application
+Categories=Game;Graphics;Utility;
+Keywords=minecraft;totem;resourcepack;skin;animated;

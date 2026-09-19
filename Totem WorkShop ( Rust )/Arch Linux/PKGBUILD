@@ -1,0 +1,23 @@
+﻿# Maintainer: @CanBeShahab <https://github.com/ridambezendegi4-hub/Totem-WorkShop>
+pkgname=totem-workshop
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Minecraft Totem Resourcepack Studio (Desktop Native) with AI Background Removal"
+arch=('x86_64')
+url="https://github.com/ridambezendegi4-hub/Totem-WorkShop"
+license=('MIT')
+depends=('ffmpeg' 'libxkbcommon' 'fontconfig' 'wayland')
+makedepends=('rust' 'cargo' 'pkg-config')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir"
+    cargo build --release --locked
+}
+
+package() {
+    cd "$srcdir"
+    install -Dm755 "target/release/totem_workshop" "$pkgdir/usr/bin/totem-workshop"
+    install -Dm644 "Arch Linux/totem-workshop.desktop" "$pkgdir/usr/share/applications/totem-workshop.desktop"
+}

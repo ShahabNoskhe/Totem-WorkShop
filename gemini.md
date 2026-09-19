@@ -1,6 +1,6 @@
 # 🪽 Totem Workshop Pro (Master Project Guide)
 
-> **طراحی و پیاده‌سازی اولیه پایتون توسط:** `@SirZigo`  
+> **طراحی و پیاده‌سازی اولیه توسط:** `@CanBeShahab`  
 > **پورت به زبان Rust، بازسازی رابط کاربری و معماری دوگانه (Dual-Target):** نسخه بومی دسکتاپ و تحت وب (WebAssembly)  
 > **مخزن رسمی گیت‌هاب:** [ridambezendegi4-hub/Totem-WorkShop](https://github.com/ridambezendegi4-hub/Totem-WorkShop)
 
@@ -80,7 +80,7 @@ Totem WorkShop/
 │   └── README.md                      # راهنمای هاست کردن روی اینترنت
 │
 └── Totem WorkShop ( Python )/         # نسخه مرجع پایتون
-    ├── TotemWorkShop.py               # اسکریپت مرجع پایتون (@SirZigo)
+    ├── TotemWorkShop.py               # اسکریپت مرجع پایتون (@CanBeShahab)
     └── Run_Python.bat                 # راه‌انداز نسخه پایتون
 ```
 

@@ -1,6 +1,6 @@
 # 🪽 Totem Workshop Pro (Master Project Guide)
 
-> **طراحی و پیاده‌سازی اولیه پایتون توسط:** `@SirZigo`  
+> **طراحی و پیاده‌سازی اولیه توسط:** `@CanBeShahab`  
 > **پورت به زبان Rust، بازسازی رابط کاربری و معماری دوگانه (Dual-Target):** نسخه بومی دسکتاپ و تحت وب (WebAssembly)  
 > **مخزن رسمی گیت‌هاب:** [ridambezendegi4-hub/Totem-WorkShop](https://github.com/ridambezendegi4-hub/Totem-WorkShop)
 
@@ -80,7 +80,7 @@ Totem WorkShop/
 │   └── README.md                      # راهنمای هاست کردن روی اینترنت
 │
 └── Totem WorkShop ( Python )/         # نسخه مرجع پایتون
-    ├── TotemWorkShop.py               # اسکریپت مرجع پایتون (@SirZigo)
+    ├── TotemWorkShop.py               # اسکریپت مرجع پایتون (@CanBeShahab)
     └── Run_Python.bat                 # راه‌انداز نسخه پایتون
 ```
 
@@ -143,8 +143,10 @@ python TotemWorkShop.py
   * محاسبه دقیق نرخ فریم بر ثانیه (FPS) و تعداد کل فریم‌های ویدیو.
   * نمایش کارت زیبا با مشخصات: `VIDEO SPECS: 30 FPS • 89 Total Frames • 3.0s Duration`.
   * دکمه هوشمند `All (تعداد کل فریم‌ها)` برای انتخاب یک‌کلیکه تمامی فریم‌های ویدیو.
-* **حذف هوشمند پس‌زمینه (AI & Cutout):**
-  * جداسازی سوژه اصلی از پس‌زمینه در وب با هوش مصنوعی Google MediaPipe.
+* **حذف هوشمند پس‌زمینه با هوش مصنوعی (BiRefNet Neural & MediaPipe):**
+  * ادغام مستقیم مدل پیشرفته هوش مصنوعی `BiRefNet-general-lite.onnx` (با معماری Swin Transformer v1 Tiny) برای جداسازی استودیویی سوژه از بک‌گراند با ابعاد ۱۰۲۴×۱۰۲۴ و نرمال‌سازی ImageNet.
+  * سیستم کش هوشمند مرورگر (Browser CacheStorage / IndexedDB) برای لود آنی و بدون تأخیر مدل.
+  * لایه پشتیبان هوش مصنوعی گوگل MediaPipe Selfie Segmentation در وب برای پردازش فوق سریع.
   * الگوریتم کروماکی انطباقی بر پایه ۴ گوشه تصویر در نسخه دسکتاپ.
   * اسلایدر تنظیم حساسیت برش (`Cutout Sensitivity`).
 * **انیمیشن روان و بدون لگ:**

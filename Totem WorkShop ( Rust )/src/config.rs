@@ -1,3 +1,4 @@
+use crate::core::i18n::Language;
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
@@ -7,6 +8,8 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub output_dir: String,
+    #[serde(default)]
+    pub language: Language,
 }
 
 impl Default for AppConfig {
@@ -22,6 +25,7 @@ impl Default for AppConfig {
 
         Self {
             output_dir: default_dir,
+            language: Language::English,
         }
     }
 }

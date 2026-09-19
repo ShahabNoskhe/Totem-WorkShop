@@ -1,5 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 use crate::config::{save_config, AppConfig};
+use crate::core::i18n::{tr, Language};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::core::pack_builder::prepare_pack_structure;
 use crate::core::pack_builder::PackMetaOptions;
@@ -15,7 +16,7 @@ use crate::ui::widgets::{
     render_pipeline_step, render_section_header, render_signature,
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use egui::{Color32, CornerRadius, RichText, Stroke, StrokeKind, Ui, Vec2};
+use egui::{Color32, CornerRadius, RichText, Stroke, Ui, Vec2};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -377,6 +378,7 @@ pub fn render_animated_totem(
     state: &mut AnimatedTotemState,
     current_page: &mut AppPage,
     config_path: &Path,
+    lang: Language,
 ) {
     #[cfg(target_arch = "wasm32")]
     let _ = config_path;
@@ -422,19 +424,32 @@ pub fn render_animated_totem(
         }
     });
 
-    // Top Header / Navigation
+    // Top Header / Navigation (Minecraft Style)
     ui.horizontal(|ui| {
-        let back_btn = egui::Button::new(RichText::new("← Dashboard").strong().color(Color32::from_rgb(148, 163, 184)))
-            .fill(Color32::from_rgb(26, 30, 42))
-            .corner_radius(CornerRadius::same(8));
+        let back_btn = egui::Button::new(
+            RichText::new(tr("◀ Dashboard", "◀ داشبورد", lang))
+                .strong()
+                .color(Color32::from_rgb(220, 225, 235)),
+        )
+        .fill(Color32::from_rgb(52, 52, 60))
+        .corner_radius(CornerRadius::same(2));
         if ui.add(back_btn).clicked() {
             *current_page = AppPage::Dashboard;
         }
 
         ui.add_space(10.0);
-        ui.label(RichText::new("Animated Totem Studio").size(16.0).strong().color(Color32::WHITE));
+        ui.label(
+            RichText::new(tr("Animated Totem Studio", "استودیوی توتم متحرک", lang))
+                .size(16.0)
+                .strong()
+                .color(Color32::from_rgb(255, 215, 0)), // Minecraft Gold
+        );
         ui.label(RichText::new("•").color(Color32::DARK_GRAY));
-        ui.label(RichText::new("Motion to In-Game Item").size(12.0).color(Color32::from_rgb(56, 189, 248)));
+        ui.label(
+            RichText::new(tr("Video to Animated Totem Pack", "تبدیل ویدیو به توتم متحرک ماینکرفت", lang))
+                .size(12.0)
+                .color(Color32::from_rgb(85, 255, 255)), // Minecraft Cyan
+        );
     });
 
     ui.add_space(12.0);
@@ -445,10 +460,10 @@ pub fn render_animated_totem(
         // =========================================================
         cols[0].vertical(|ui| {
             egui::Frame::group(ui.style())
-                .fill(Color32::from_rgb(18, 20, 28))
-                .corner_radius(CornerRadius::same(14))
+                .fill(Color32::from_rgb(24, 24, 30))
+                .corner_radius(CornerRadius::same(2))
                 .inner_margin(18.0)
-                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(34, 38, 52)))
+                .stroke(Stroke::new(1.5_f32, Color32::from_rgb(45, 45, 56)))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.set_height(ui.available_height());
@@ -462,13 +477,15 @@ pub fn render_animated_totem(
                                 .show(ui, |ui| {
                                     ui.vertical(|ui| {
                                         // 1. Media Sources
-                                        render_section_header(ui, "🎬", "Media Sources", Color32::from_rgb(56, 189, 248));
+                                        render_section_header(ui, "🎬", &tr("Media Sources", "فایل‌های چندرسانه‌ای", lang), Color32::from_rgb(56, 189, 248));
                                 ui.add_space(6.0);
 
                                 // Video Card
                                 let has_video = state.video_path.is_some() || state.video_bytes.is_some();
+                                let video_title = tr("Video File", "فایل ویدیوی ورودی", lang);
+                                let select_text = tr("Select", "انتخاب فایل", lang);
                                 if render_file_picker_card(
-                                    ui, "🎥", "Video File", &state.video_info, has_video, "Select"
+                                    ui, "🎥", &video_title, &state.video_info, has_video, &select_text
                                 ) {
                                     #[cfg(not(target_arch = "wasm32"))]
                                     if let Some(file) = rfd::FileDialog::new()
@@ -518,14 +535,14 @@ pub fn render_animated_totem(
                                         .inner_margin(egui::Margin::symmetric(12, 7))
                                         .show(ui, |ui| {
                                             ui.horizontal(|ui| {
-                                                ui.label(RichText::new("VIDEO SPECS:").color(Color32::from_rgb(56, 189, 248)).strong().size(11.5));
+                                                ui.label(RichText::new(tr("VIDEO SPECS:", "مشخصات ویدیو:", lang)).color(Color32::from_rgb(56, 189, 248)).strong().size(11.5));
                                                 ui.label(RichText::new("•").color(Color32::from_rgb(80, 95, 120)).size(11.0));
                                                 ui.label(RichText::new(format!("{:.0} FPS", fps)).color(Color32::from_rgb(250, 204, 21)).strong().size(12.0));
                                                 ui.label(RichText::new("•").color(Color32::from_rgb(80, 95, 120)).size(11.0));
-                                                ui.label(RichText::new(format!("{} Total Frames", frames)).color(Color32::from_rgb(52, 211, 153)).strong().size(12.0));
+                                                ui.label(RichText::new(format!("{} {}", frames, tr("Total Frames", "کل فریم‌ها", lang))).color(Color32::from_rgb(52, 211, 153)).strong().size(12.0));
                                                 if let Some(dur) = state.video_duration {
                                                     ui.label(RichText::new("•").color(Color32::from_rgb(80, 95, 120)).size(11.0));
-                                                    ui.label(RichText::new(format!("{:.1}s Duration", dur)).color(Color32::WHITE).size(11.5));
+                                                    ui.label(RichText::new(format!("{:.1}s {}", dur, tr("Duration", "مدت زمان", lang))).color(Color32::WHITE).size(11.5));
                                                 }
                                             });
                                         });
@@ -536,11 +553,14 @@ pub fn render_animated_totem(
 
                                 // Icon Card
                                 let has_icon = state.icon_path.is_some() || state.icon_bytes.is_some();
-                                let icon_label = state.icon_path.as_ref().map_or("Default Icon".to_string(), |p| {
+                                let def_icon_label = tr("Default Icon", "آیکون پیش‌فرض", lang);
+                                let icon_label = state.icon_path.as_ref().map_or(def_icon_label, |p| {
                                     p.file_name().unwrap_or_default().to_string_lossy().to_string()
                                 });
+                                let icon_title = tr("Pack Icon", "آیکون ریسورس‌پک", lang);
+                                let browse_text = tr("Browse", "انتخاب", lang);
                                 if render_file_picker_card(
-                                    ui, "🖼", "Pack Icon", &icon_label, has_icon, "Browse"
+                                    ui, "🖼", &icon_title, &icon_label, has_icon, &browse_text
                                 ) {
                                     #[cfg(not(target_arch = "wasm32"))]
                                     if let Some(file) = rfd::FileDialog::new()
@@ -565,8 +585,9 @@ pub fn render_animated_totem(
 
                                 // Sound Card
                                 let has_sound = state.sound_path.is_some() || state.sound_bytes.is_some();
+                                let sound_title = tr("Totem Pop Sound", "افکت صوتی استفاده توتم", lang);
                                 if render_file_picker_card(
-                                    ui, "🎵", "Totem Pop Sound", &state.sound_label, has_sound, "Browse"
+                                    ui, "🎵", &sound_title, &state.sound_label, has_sound, &browse_text
                                 ) {
                                     #[cfg(not(target_arch = "wasm32"))]
                                     if let Some(file) = rfd::FileDialog::new()
@@ -592,11 +613,11 @@ pub fn render_animated_totem(
                                 ui.add_space(18.0);
 
                                 // 2. Animation & Engine Settings
-                                render_section_header(ui, "⚙", "Engine Settings", Color32::from_rgb(168, 85, 247));
+                                render_section_header(ui, "⚙", &tr("Engine Settings", "تنظیمات موتور و انیمیشن", lang), Color32::from_rgb(168, 85, 247));
                                 ui.add_space(6.0);
 
                                 // Frames Presets
-                                ui.label(RichText::new("Target Frame Count:").size(12.0).color(Color32::from_rgb(200, 205, 215)));
+                                ui.label(RichText::new(tr("Target Frame Count:", "تعداد فریم‌های استخراجی:", lang)).size(12.0).color(Color32::from_rgb(200, 205, 215)));
                                 ui.horizontal(|ui| {
                                     for preset in &["5", "15", "35", "75"] {
                                         let is_sel = state.max_frames_str == *preset;
@@ -624,7 +645,8 @@ pub fn render_animated_totem(
                                             Color32::from_rgb(20, 38, 30)
                                         };
                                         let text_color = if is_sel { Color32::BLACK } else { Color32::from_rgb(110, 231, 183) };
-                                        let btn = egui::Button::new(RichText::new(format!("All ({tf})")).strong().color(text_color))
+                                        let all_btn_label = if lang.is_persian() { format!("کل ({tf})") } else { format!("All ({tf})") };
+                                        let btn = egui::Button::new(RichText::new(all_btn_label).strong().color(text_color))
                                             .fill(btn_color)
                                             .min_size(Vec2::new(56.0, 28.0))
                                             .corner_radius(CornerRadius::same(6));
@@ -641,41 +663,55 @@ pub fn render_animated_totem(
                                     );
                                 });
 
-                                ui.add_space(10.0);
+                                ui.add_space(14.0);
 
                                 // Canvas Size & Speed side by side
                                 ui.horizontal(|ui| {
                                     ui.vertical(|ui| {
-                                        ui.label(RichText::new("Canvas Size:").size(11.5).color(Color32::from_rgb(180, 185, 195)));
+                                        ui.add_space(2.0);
+                                        ui.label(RichText::new(tr("Canvas Size:", "کیفیت ابعاد تصویر:", lang)).size(11.5).color(Color32::from_rgb(180, 185, 195)));
+                                        ui.add_space(2.0);
+                                        let opt64 = tr("64px (Zero Lag)", "۶۴ پیکسل (بدون لگ)", lang);
+                                        let opt128 = tr("128px (Standard)", "۱۲۸ پیکسل (استاندارد)", lang);
+                                        let opt256 = tr("256px (HD)", "۲۵۶ پیکسل (اچ‌دی)", lang);
+
+                                        let selected_label = match state.canvas_size {
+                                            CanvasSize::Light64 => &opt64,
+                                            CanvasSize::Normal128 => &opt128,
+                                            CanvasSize::Heavy256 => &opt256,
+                                        };
+
                                         egui::ComboBox::from_id_salt("anim_canvas_combo")
-                                            .selected_text(match state.canvas_size {
-                                                CanvasSize::Light64 => "64px (Zero Lag)",
-                                                CanvasSize::Normal128 => "128px (Standard)",
-                                                CanvasSize::Heavy256 => "256px (HD)",
-                                            })
+                                            .selected_text(selected_label)
                                             .width(140.0)
                                             .show_ui(ui, |ui| {
-                                                ui.selectable_value(&mut state.canvas_size, CanvasSize::Light64, "64px (Zero Lag)");
-                                                ui.selectable_value(&mut state.canvas_size, CanvasSize::Normal128, "128px (Standard)");
-                                                ui.selectable_value(&mut state.canvas_size, CanvasSize::Heavy256, "256px (HD)");
+                                                ui.selectable_value(&mut state.canvas_size, CanvasSize::Light64, opt64);
+                                                ui.selectable_value(&mut state.canvas_size, CanvasSize::Normal128, opt128);
+                                                ui.selectable_value(&mut state.canvas_size, CanvasSize::Heavy256, opt256);
                                             });
                                     });
 
                                     ui.add_space(10.0);
 
                                     ui.vertical(|ui| {
-                                        ui.label(RichText::new("Playback Speed:").size(11.5).color(Color32::from_rgb(180, 185, 195)));
+                                        ui.label(RichText::new(tr("Playback Speed:", "سرعت پخش انیمیشن:", lang)).size(11.5).color(Color32::from_rgb(180, 185, 195)));
+                                        let spd1 = tr("1 Tick (20 FPS - Fluid)", "۱ تیک (۲۰ فریم - فوق روان)", lang);
+                                        let spd2 = tr("2 Ticks (10 FPS)", "۲ تیک (۱۰ فریم)", lang);
+                                        let spd3 = tr("3 Ticks (Slow)", "۳ تیک (آهسته)", lang);
+
+                                        let selected_spd = match state.frametime {
+                                            1 => &spd1,
+                                            2 => &spd2,
+                                            _ => &spd3,
+                                        };
+
                                         egui::ComboBox::from_id_salt("anim_speed_combo")
-                                            .selected_text(match state.frametime {
-                                                1 => "1 Tick (20 FPS - Fluid)",
-                                                2 => "2 Ticks (10 FPS)",
-                                                _ => "3 Ticks (Slow)",
-                                            })
+                                            .selected_text(selected_spd)
                                             .width(140.0)
                                             .show_ui(ui, |ui| {
-                                                ui.selectable_value(&mut state.frametime, 1, "1 Tick (20 FPS - Fluid)");
-                                                ui.selectable_value(&mut state.frametime, 2, "2 Ticks (10 FPS)");
-                                                ui.selectable_value(&mut state.frametime, 3, "3 Ticks (Slow)");
+                                                ui.selectable_value(&mut state.frametime, 1, spd1);
+                                                ui.selectable_value(&mut state.frametime, 2, spd2);
+                                                ui.selectable_value(&mut state.frametime, 3, spd3);
                                             });
                                     });
                                 });
@@ -683,19 +719,23 @@ pub fn render_animated_totem(
                                 ui.add_space(8.0);
 
                                 // Smooth Interpolation (Lag killer)
-                                ui.checkbox(&mut state.interpolate, "Enable Texture Interpolation (Blur)");
+                                let interp_label = tr("Enable Texture Interpolation (Blur)", "فعال‌سازی تاری بین فریم‌ها (Motion Blur)", lang);
+                                ui.checkbox(&mut state.interpolate, interp_label);
                                 if state.interpolate {
-                                    ui.label(RichText::new("⚠️ Notice: Texture interpolation causes severe FPS lag in Minecraft! Keep OFF for smooth gameplay.").size(10.5).color(Color32::from_rgb(251, 146, 60)));
+                                    let warn_text = tr("⚠️ Notice: Texture interpolation causes severe FPS lag in Minecraft! Keep OFF for smooth gameplay.", "⚠️ هشدار: تاری بین فریم‌ها ممکن است در بازی افت فریم ایجاد کند. بهتر است خاموش باشد.", lang);
+                                    ui.label(RichText::new(warn_text).size(10.5).color(Color32::from_rgb(251, 146, 60)));
                                 }
 
                                 ui.add_space(8.0);
 
                                 // Background Removal
-                                ui.checkbox(&mut state.auto_chroma_key, "Auto-detect & Remove Background (AI & Cutout)");
+                                let ai_label = tr("Auto-detect & Remove Background (AI & Cutout)", "حذف خودکار پس‌زمینه با هوش مصنوعی (BiRefNet / MediaPipe)", lang);
+                                ui.checkbox(&mut state.auto_chroma_key, ai_label);
                                 if state.auto_chroma_key {
                                     ui.add_space(2.0);
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new("Cutout Sensitivity:").size(11.0).color(Color32::from_rgb(180, 185, 195)));
+                                        let sens_label = tr("Cutout Sensitivity:", "حساسیت برش هوش مصنوعی:", lang);
+                                        ui.label(RichText::new(sens_label).size(11.0).color(Color32::from_rgb(180, 185, 195)));
                                         ui.add(egui::Slider::new(&mut state.chroma_tolerance, 15..=90));
                                     });
                                 }
@@ -703,11 +743,11 @@ pub fn render_animated_totem(
                                 ui.add_space(18.0);
 
                                 // 3. Pack Identity
-                                render_section_header(ui, "🏷", "Pack Identity", Color32::from_rgb(34, 197, 94));
+                                render_section_header(ui, "🏷", &tr("Pack Identity", "مشخصات و متادیتای پک", lang), Color32::from_rgb(34, 197, 94));
                                 ui.add_space(6.0);
 
                                 // Minecraft Version Dropdown
-                                ui.label(RichText::new("Target Minecraft Version:").size(12.0).color(Color32::from_rgb(200, 205, 215)));
+                                ui.label(RichText::new(tr("Target Minecraft Version:", "نسخه ماینکرفت هدف:", lang)).size(12.0).color(Color32::from_rgb(200, 205, 215)));
                                 egui::ComboBox::from_id_salt("anim_mc_version")
                                     .selected_text(MC_VERSIONS[state.version_idx].display)
                                     .width(ui.available_width() - 10.0)
@@ -730,7 +770,7 @@ pub fn render_animated_totem(
                                 ui.add_space(10.0);
 
                                 // Name & Description
-                                ui.label(RichText::new("Resource Pack Name:").size(12.0).color(Color32::from_rgb(200, 205, 215)));
+                                ui.label(RichText::new(tr("Resource Pack Name:", "نام ریسورس‌پک:", lang)).size(12.0).color(Color32::from_rgb(200, 205, 215)));
                                 let name_resp = ui.add(
                                     egui::TextEdit::singleline(&mut state.pack_name)
                                         .desired_width(ui.available_width() - 10.0)
@@ -741,7 +781,7 @@ pub fn render_animated_totem(
                                 }
 
                                 ui.add_space(6.0);
-                                ui.label(RichText::new("Resource Pack Description:").size(12.0).color(Color32::from_rgb(200, 205, 215)));
+                                ui.label(RichText::new(tr("Resource Pack Description:", "توضیحات ریسورس‌پک:", lang)).size(12.0).color(Color32::from_rgb(200, 205, 215)));
                                 let desc_resp = ui.add(
                                     egui::TextEdit::singleline(&mut state.pack_desc)
                                         .desired_width(ui.available_width() - 10.0)
@@ -756,17 +796,19 @@ pub fn render_animated_totem(
                                 #[cfg(not(target_arch = "wasm32"))]
                                 ui.horizontal(|ui| {
                                     let dir_name = state.output_dir.file_name().unwrap_or_default().to_string_lossy();
-                                    ui.label(RichText::new(format!("📂 Save To: .../{dir_name}")).size(11.0).color(Color32::GRAY));
-                                    if ui.button("Change...").clicked() {
+                                    let save_prefix = tr("📂 Save To:", "📂 مسیر ذخیره:", lang);
+                                    let change_btn_text = tr("Change...", "تغییر مسیر...", lang);
+                                    ui.label(RichText::new(format!("{save_prefix} .../{dir_name}")).size(11.0).color(Color32::GRAY));
+                                    if ui.button(change_btn_text).clicked() {
                                         if let Some(folder) = rfd::FileDialog::new().set_directory(&state.output_dir).pick_folder() {
                                             state.output_dir = folder.clone();
-                                            let _ = save_config(config_path, &AppConfig { output_dir: folder.to_string_lossy().to_string() });
+                                            let _ = save_config(config_path, &AppConfig { output_dir: folder.to_string_lossy().to_string(), language: lang });
                                         }
                                     }
                                 });
                                 #[cfg(target_arch = "wasm32")]
                                 ui.horizontal(|ui| {
-                                    ui.label(RichText::new("📥 Direct Browser Download (.zip pack ready to use)").size(11.5).color(Color32::from_rgb(56, 189, 248)));
+                                    ui.label(RichText::new(tr("📥 Direct Browser Download (.zip pack ready to use)", "📥 دانلود مستقیم در مرورگر (فایل زیپ آماده استفاده)", lang)).size(11.5).color(Color32::from_rgb(56, 189, 248)));
                                 });
 
                                 ui.add_space(10.0);
@@ -781,10 +823,10 @@ pub fn render_animated_totem(
         // =========================================================
         cols[1].vertical(|ui| {
             egui::Frame::group(ui.style())
-                .fill(Color32::from_rgb(18, 20, 28))
-                .corner_radius(CornerRadius::same(14))
+                .fill(Color32::from_rgb(24, 24, 30))
+                .corner_radius(CornerRadius::same(2))
                 .inner_margin(20.0)
-                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(34, 38, 52)))
+                .stroke(Stroke::new(1.5_f32, Color32::from_rgb(45, 45, 56)))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.set_height(ui.available_height());
@@ -792,32 +834,38 @@ pub fn render_animated_totem(
                     ui.vertical_centered(|ui| {
                         ui.add_space(8.0);
                         ui.label(
-                            RichText::new("Studio Command Center")
+                            RichText::new(tr("Studio Command Center", "مرکز فرماندهی و پردازش", lang))
                                 .size(22.0)
                                 .strong()
-                                .color(Color32::WHITE),
+                                .color(Color32::from_rgb(255, 215, 0)), // Minecraft Gold
                         );
                         ui.label(
-                            RichText::new("Automated Minecraft Resource Pack Compiler")
+                            RichText::new(tr("Automated Minecraft Resource Pack Compiler", "موتور خودکار ساخت و کامپایل ریسورس‌پک ماینکرفت", lang))
                                 .size(12.0)
-                                .color(Color32::from_rgb(148, 163, 184)),
+                                .color(Color32::from_rgb(180, 185, 200)),
                         );
 
                         ui.add_space(20.0);
 
-                        // Studio Overview Card
+                        // Studio Overview Card (Minecraft Stone Item Frame)
                         let (info_card_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 80.0), egui::Sense::hover());
                         let painter = ui.painter();
-                        painter.rect_filled(info_card_rect, CornerRadius::same(12), Color32::from_rgb(24, 28, 38));
-                        painter.rect_stroke(info_card_rect, CornerRadius::same(12), Stroke::new(1.0_f32, Color32::from_rgb(45, 52, 70)), StrokeKind::Inside);
+                        crate::ui::widgets::paint_mc_beveled_box(
+                            painter,
+                            info_card_rect,
+                            Color32::from_rgb(32, 32, 38),
+                            Color32::from_rgb(60, 60, 72),
+                            Color32::from_rgb(16, 16, 20),
+                            Color32::BLACK,
+                        );
 
                         let info_y = info_card_rect.min.y + 16.0;
                         painter.text(
                             egui::pos2(info_card_rect.min.x + 20.0, info_y),
                             egui::Align2::LEFT_TOP,
-                            "EXPORT CONFIGURATION",
+                            tr("EXPORT CONFIGURATION", "مشخصات ریسورس‌پک خروجی", lang),
                             egui::FontId::proportional(11.0),
-                            Color32::from_rgb(56, 189, 248),
+                            Color32::from_rgb(85, 255, 255),
                         );
 
                         let frames_val = state.max_frames_str.trim();
@@ -832,59 +880,73 @@ pub fn render_animated_totem(
                             egui::Align2::LEFT_TOP,
                             details,
                             egui::FontId::proportional(13.0),
-                            Color32::from_rgb(220, 225, 235),
+                            Color32::from_rgb(240, 240, 245),
                         );
 
                         ui.add_space(25.0);
 
                         // Pipeline Stages
                         let step = state.current_pipeline_step;
-                        render_pipeline_step(ui, "1", "Frame Extraction", if step > 1 { "Done ✓" } else if step == 1 { "Extracting..." } else { "Idle" }, step == 1, step > 1);
+                        let s_done = tr("Done ✓", "انجام شد ✓", lang);
+                        let s_idle = tr("Idle", "آماده", lang);
+
+                        let st1 = if step > 1 { &s_done } else if step == 1 { "Extracting..." } else { &s_idle };
+                        let st2 = if step > 2 { &s_done } else if step == 2 { "Processing..." } else { &s_idle };
+                        let st3 = if step > 3 { &s_done } else if step == 3 { "Stitching..." } else { &s_idle };
+                        let st4 = if step >= 5 { &s_done } else if step == 4 { "Writing..." } else { &s_idle };
+
+                        render_pipeline_step(ui, "1", &tr("Frame Extraction", "استخراج و تحلیل فریم‌ها", lang), st1, step == 1, step > 1);
                         ui.add_space(6.0);
-                        render_pipeline_step(ui, "2", "Chroma Key & Edge Clear", if step > 2 { "Done ✓" } else if step == 2 { "Processing..." } else { "Idle" }, step == 2, step > 2);
+                        render_pipeline_step(ui, "2", &tr("AI Background Removal", "حذف پس‌زمینه با هوش مصنوعی", lang), st2, step == 2, step > 2);
                         ui.add_space(6.0);
-                        render_pipeline_step(ui, "3", "Vertical Spritesheet", if step > 3 { "Done ✓" } else if step == 3 { "Stitching..." } else { "Idle" }, step == 3, step > 3);
+                        render_pipeline_step(ui, "3", &tr("Vertical Spritesheet", "تولید اسپرایت‌شیت عمودی", lang), st3, step == 3, step > 3);
                         ui.add_space(6.0);
-                        render_pipeline_step(ui, "4", "Pack & Meta Generation", if step >= 5 { "Done ✓" } else if step == 4 { "Writing..." } else { "Idle" }, step == 4, step >= 5);
+                        render_pipeline_step(ui, "4", &tr("Pack & Meta Generation", "بسته‌بندی فایل‌های ریسورس‌پک", lang), st4, step == 4, step >= 5);
 
                         ui.add_space(25.0);
 
-                        // Live Progress Bar
+                        // Live Progress Bar (Minecraft XP Green)
                         render_clean_progress_bar(
                             ui,
                             state.progress.fraction,
                             ui.available_width() - 20.0,
                             14.0,
-                            Color32::from_rgb(56, 189, 248),
+                            Color32::from_rgb(85, 255, 85),
                         );
 
                         ui.add_space(6.0);
                         let prog_text = if state.progress.progress_text.is_empty() {
-                            "Ready to compile".to_string()
+                            tr("Ready to compile", "آماده برای ساخت ریسورس‌پک", lang)
                         } else {
                             format!("Progress: {}", state.progress.progress_text)
                         };
-                        ui.label(RichText::new(prog_text).size(12.0).color(Color32::from_rgb(148, 163, 184)));
+                        ui.label(RichText::new(prog_text).size(12.0).color(Color32::from_rgb(170, 175, 190)));
 
                         ui.add_space(25.0);
 
-                        // Main Action Button
+                        // Main Action Button (Minecraft Emerald Button)
                         let is_ready = !state.progress.is_running && state.video_path.is_some();
                         let btn_color = if is_ready {
-                            Color32::from_rgb(37, 99, 235)
+                            Color32::from_rgb(46, 125, 50)
                         } else {
-                            Color32::from_rgb(30, 35, 48)
+                            Color32::from_rgb(42, 42, 48)
+                        };
+
+                        let btn_label_text = if state.progress.is_running {
+                            tr("⏳ COMPILING RESOURCE PACK...", "⏳ در حال ساخت ریسورس‌پک...", lang)
+                        } else {
+                            tr("🚀 COMPILE ANIMATED TOTEM", "🚀 ساخت و استخراج ریسورس‌پک توتم", lang)
                         };
 
                         let gen_btn = egui::Button::new(
-                            RichText::new(if state.progress.is_running { "⏳ COMPILING RESOURCE PACK..." } else { "🚀 COMPILE ANIMATED TOTEM" })
+                            RichText::new(btn_label_text)
                                 .size(15.0)
                                 .strong()
-                                .color(if is_ready { Color32::WHITE } else { Color32::from_rgb(100, 110, 130) }),
+                                .color(if is_ready { Color32::WHITE } else { Color32::from_rgb(120, 125, 140) }),
                         )
                         .fill(btn_color)
                         .min_size(Vec2::new(ui.available_width() - 30.0, 48.0))
-                        .corner_radius(CornerRadius::same(10));
+                        .corner_radius(CornerRadius::same(2));
 
                         if ui.add_enabled(is_ready, gen_btn).clicked() {
                             state.start_generation();
@@ -894,24 +956,36 @@ pub fn render_animated_totem(
                             ui.add_space(16.0);
                             match res {
                                 Ok(msg) => {
-                                    let (res_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 20.0, 42.0), egui::Sense::hover());
+                                    let (res_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 20.0, 44.0), egui::Sense::hover());
                                     let p = ui.painter();
-                                    p.rect_filled(res_rect, CornerRadius::same(8), Color32::from_rgb(20, 45, 30));
-                                    p.rect_stroke(res_rect, CornerRadius::same(8), Stroke::new(1.0_f32, Color32::from_rgb(34, 197, 94)), StrokeKind::Inside);
-                                    p.text(res_rect.center(), egui::Align2::CENTER_CENTER, msg, egui::FontId::proportional(12.0), Color32::from_rgb(74, 222, 128));
+                                    crate::ui::widgets::paint_mc_beveled_box(
+                                        p,
+                                        res_rect,
+                                        Color32::from_rgb(24, 48, 30),
+                                        Color32::from_rgb(85, 255, 85),
+                                        Color32::from_rgb(12, 24, 16),
+                                        Color32::BLACK,
+                                    );
+                                    p.text(res_rect.center(), egui::Align2::CENTER_CENTER, msg, egui::FontId::proportional(12.0), Color32::from_rgb(85, 255, 85));
                                 }
                                 Err(err) => {
-                                    let (res_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 20.0, 42.0), egui::Sense::hover());
+                                    let (res_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 20.0, 44.0), egui::Sense::hover());
                                     let p = ui.painter();
-                                    p.rect_filled(res_rect, CornerRadius::same(8), Color32::from_rgb(45, 20, 20));
-                                    p.rect_stroke(res_rect, CornerRadius::same(8), Stroke::new(1.0_f32, Color32::from_rgb(239, 68, 68)), StrokeKind::Inside);
-                                    p.text(res_rect.center(), egui::Align2::CENTER_CENTER, err, egui::FontId::proportional(12.0), Color32::from_rgb(248, 113, 113));
+                                    crate::ui::widgets::paint_mc_beveled_box(
+                                        p,
+                                        res_rect,
+                                        Color32::from_rgb(48, 24, 24),
+                                        Color32::from_rgb(255, 85, 85),
+                                        Color32::from_rgb(24, 12, 12),
+                                        Color32::BLACK,
+                                    );
+                                    p.text(res_rect.center(), egui::Align2::CENTER_CENTER, err, egui::FontId::proportional(12.0), Color32::from_rgb(255, 85, 85));
                                 }
                             }
                         }
 
                         ui.add_space(20.0);
-                        render_signature(ui);
+                        render_signature(ui, lang);
                     });
                 });
         });

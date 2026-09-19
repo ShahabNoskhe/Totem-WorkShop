@@ -1,140 +1,136 @@
-# 🪽 Totem Workshop Pro (Rust & WebAssembly Edition)
+# 🪽 Totem Workshop Pro (Dual-Target Rust & WebAssembly Studio)
 
-> **Original Python Design & Implementation by:** @SirZigo  
-> **Native Rust & WebAssembly Port:** High-Performance Dual-Target Edition
+<div align="center">
 
-[![Rust](https://img.shields.io/badge/Language-Rust-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org/)
-[![WebAssembly](https://img.shields.io/badge/Platform-WebAssembly-654FF0.svg?style=flat-square&logo=webassembly)](https://webassembly.org/)
-[![Minecraft](https://img.shields.io/badge/Minecraft-1.12%20--%201.21%2B-green.svg?style=flat-square&logo=minecraft)](https://minecraft.net/)
-[![OS](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Web-blue.svg?style=flat-square)](https://github.com/ridambezendegi4-hub/Totem-WorkShop)
-[![License](https://img.shields.io/badge/License-MIT-brightgreen.svg?style=flat-square)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/ShahabNoskhe/Totem-WorkShop?color=brightgreen&style=for-the-badge&logo=github)](https://github.com/ShahabNoskhe/Totem-WorkShop/releases)
+[![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange.svg?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
+[![WebAssembly](https://img.shields.io/badge/Platform-WebAssembly-654FF0.svg?style=for-the-badge&logo=webassembly)](https://webassembly.org/)
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.12%20--%201.21%2B-green.svg?style=for-the-badge&logo=minecraft)](https://minecraft.net/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+
+<br/>
+
+[![Language English](https://img.shields.io/badge/Language-English-blue?style=flat-square)](#-english)
+[![Language Persian](https://img.shields.io/badge/زبان-فارسی-green?style=flat-square)](#-فارسی)
+
+> **Created & Designed by:** `@CanBeShahab`  
+> **Official Repository:** [ShahabNoskhe/Totem-WorkShop](https://github.com/ShahabNoskhe/Totem-WorkShop)  
+> **Architecture:** Native High-Performance Rust & Serverless WebAssembly (Wasm)  
+> **Target:** Minecraft 1.12 - 1.21+ (Pack Formats 3 to 84)
+
+</div>
 
 ---
 
-## 📖 معرفی پروژه | Overview
+# 🇬🇧 English
 
-نرم‌افزار **Totem Workshop Pro** یک ابزار حرفه‌ای، سریع و همه‌فن‌حریف برای ساخت ریسورس‌پک‌های اختصاصی آیتم **توتم (Totem of Undying)** در بازی **Minecraft** است. این ابزار به گیمرها، سازندگان محتوا و ماد‌سازان اجازه می‌دهد در کمترین زمان ممکن ویدیوها و اسکین‌های مورد علاقه خود را به توتم‌های متحرک یا سه‌بعدی درون بازی تبدیل کنند.
+## 📖 Overview
 
-این پروژه از زبان پایتون به زبان مدرن و فوق‌العاده سریع **Rust** بازنویسی شده و به صورت **Dual-Target** هم به عنوان یک برنامه اجرایی پرسرعت دسکتاپ (ویندوز و لینوکس) و هم به عنوان یک وب‌اپلیکیشن مستقل مبتنی بر **WebAssembly (Wasm)** بدون نیاز به هیچ‌گونه سرور کار می‌کند.
+**Totem Workshop Pro** is an all-in-one studio engineered to craft custom **Totem of Undying** resource packs for **Minecraft**. Designed for players, modders, and content creators, it transforms videos and player skins into fluid animated or custom 3D in-game totems within seconds.
+
+The project features a high-performance **Dual-Target architecture**: it compiles natively as a standalone desktop executable (Windows `.exe` & Linux native) and as a 100% serverless **WebAssembly (Wasm)** web application that runs directly inside modern web browsers without requiring backend servers.
 
 ---
 
-## ⚡ نسخه‌های پروژه | Available Flavors
+## ⚡ Project Structure
 
-پروژه به صورت سه بخش مجزا سازماندهی شده است:
-
-`
+```text
 Totem WorkShop/
-├── Totem WorkShop ( Rust )/          # نسخه بومی دسکتاپ (Windows & Arch Linux)
-├── Totem WorkShop ( Web Assembely )/ # نسخه تحت وب بدون نیاز به سرور (Wasm)
-├── Totem WorkShop ( Python )/        # نسخه مرجع اولیه پایتون
-└── note.txt                          # کدهای تجمیع شده پروژه در یک فایل
-`
+├── Totem WorkShop ( Rust )/          # Native Desktop Studio (Windows .exe & Linux)
+│   ├── totem_workshop.exe            # Standalone Windows Executable
+│   ├── Run.bat                       # Desktop Quick Launcher
+│   ├── Arch Linux/                   # Arch Linux build scripts & PKGBUILD
+│   └── src/                          # Rust Source Code (egui / core engine)
+├── Totem WorkShop ( Web Assembely )/ # Client-Side Web Studio (Wasm / HTML5 / JS)
+│   ├── dist/                         # Production Web Build (HTML / JS / Wasm)
+│   ├── Start_Web.bat                 # Local Web Server Launcher
+│   └── index.html                    # Web Container & MediaPipe / ONNX Bridge
+├── Totem WorkShop ( Python )/        # Reference Python Prototype (@CanBeShahab)
+├── Totem_WorkShop_Repository.zip     # Full Repository Package Archive
+└── README.md                         # Official Documentation
+```
 
 ---
 
-## 🎮 قابلیت‌های برجسته | Key Features
+## 🎮 Key Features
 
-### ۱. ماژول Animated Totem (توتم متحرک از ویدیو)
-- **پشتیبانی گسترده از فرمت‌های ویدیویی:** MP4, WebM, MOV, AVI, MKV و غیره.
-- **استخراج هوشمند مشخصات ویدیو:** تشخیص خودکار نرخ فریم (FPS)، طول ویدیو و تعداد کل فریم‌ها.
-- **حذف هوشمند پس‌زمینه (AI & Cutout):** جداسازی سوژه با فیلتر ترنسپرنسی و مدیاپایپ تا پس‌زمینه در دست بازیکن مکعبی نشود.
-- **کنترل نرخ پرش و سرعت پخش:** قابلیت انتخاب فریم‌تایم استاندارد ۲۰ فریم بر ثانیه بدون افت فریم (FPS Drop) درون ماینکرفت.
-- **تولید خودکار اسپرایت‌شیت (Vertical Spritesheet):** اتصال عمودی فریم‌ها و تولید فایل 	otem_of_undying.png.mcmeta.
+### 1. Animated Totem Studio (Video to Animated Totem)
+* **Broad Media Format Support:** `MP4`, `WebM`, `MOV`, `AVI`, `MKV`, `FLV`, `WMV`, `TS`, `OGV`.
+* **Neural AI & Smart Background Removal:**
+  * Direct integration of `BiRefNet-general-lite.onnx` (Swin Transformer v1 Tiny) for studio-grade subject cutout without edge artifacts.
+  * Browser `CacheStorage` / `IndexedDB` caching for instant 0-second model loading.
+  * Fast Google MediaPipe Selfie Segmentation and adaptive multi-corner chroma-key fallback.
+* **Pro Video Specs Prober:** Automatic parsing of video duration, FPS, and total frame count.
+* **Anti-Lag & Fluid Animation:**
+  * Zero-lag default 20 FPS (1 Tick) fluid playback.
+  * Disabled interpolation blur by default to eliminate FPS drops in Minecraft.
+* **Vertical Spritesheet Generation:** Stitching frames into standard vertical sheets (64px, 128px, or 256px HD).
 
-### ۲. ماژول Skin-Forge (توتم از روی اسکین بازیکن)
-- **دریافت خودکار از نام‌کاربری:** دانلود مستقیم اسکین با اتصال به سرورهای Mojang و Minotar.
-- **پشتیبانی از Drag & Drop:** امکان کشیدن و رها کردن فایل اسکین محلی روی پنجره برنامه.
-- **حالت ۲بعدی (2D Mode):** برش دقیق لایه‌های سر، دست‌ها، تنه و اعمال لایه‌های بیرونی (Outer Overlay).
-- **حالت ۳بعدی (3D Mode):** ساخت مدل‌های سفارشی سه‌بعدی ماینکرفت (skin.json و 	otem_of_undying.json) با تنظیم زوایای دید اول‌شخص و سوم‌شخص.
+### 2. Skin-Forge Studio (Player Skin to Totem)
+* **Instant Mojang API Lookup:** Fetch player skins directly from Mojang & Minotar servers.
+* **Drag & Drop Upload:** Seamless file dropping onto the window.
+* **2D Vanilla Totem Mode:** Slices skin layers into the authentic 16×16 totem texture layout matching standard cute Minecraft totems.
+* **3D Voxel Model Mode:** Automatic generation of `totem_of_undying.json` and `skin.json` with calibrated first-person, third-person, and GUI item perspective transforms.
 
-### ۳. امکانات ریسورس‌پک
-- **مبدل خودکار صدا:** تبدیل هر فرمت صوتی (mp3, wav, ogg) به فرمت صدای توتم ماینکرفت (use.ogg) به همراه sounds.json.
-- **آیکون سفارشی پک:** تغییر اندازه خودکار تصویر به ابعاد استاندارد ۶۴×۶۴ پیکسل.
-- **پالت رنگ‌های رسمی ماینکرفت:** درج آسان کدهای فرمت رنگی (§4, §c, §a, §e, §l, ...) در عنوان و توضیحات پک.
-- **سازگاری با تمامی نسخه‌ها:** پشتیبانی از نسخه 1.12 تا 1.21+ و 26 (Pack Format 3 تا 84).
+### 3. Resource Pack Ecosystem
+* **Universal Audio Converter:** Automatic conversion of any audio file (`mp3`, `wav`, `ogg`, `aac`, `flac`) to Minecraft `use.ogg` with `sounds.json`.
+* **Custom Pack Icon:** Auto-rescaling of any image to 64×64 PNG `pack.png`.
+* **Official Minecraft Color Palette:** Fast insertion of color formatting codes (`§4`, `§c`, `§a`, `§e`, `§l`, etc.).
+* **Universal Version Compatibility:** Supports Pack Formats 3 through 84 (Minecraft 1.12 up to 1.21+).
 
 ---
 
-## 🚀 راهنمای اجرا | How to Run
+## 🚀 How to Run
 
-### ۱. اجرای نسخه دسکتاپ (ویندوز)
-کافیست وارد پوشه Totem WorkShop ( Rust ) شوید و فایل زیر را باز کنید:
-`	ext
-totem_workshop.exe
-`
-یا با دستور زیر از روی سورس‌کد اجرا کنید:
-`powershell
-cargo run --release
-`
+### 1. Desktop Edition (Windows)
+* Double click `totem_workshop.exe` or `Run.bat` inside `Totem WorkShop ( Rust )/`.
+* Or build and run from source:
+  ```powershell
+  cd "Totem WorkShop ( Rust )"
+  cargo run --release
+  ```
 
-### ۲. اجرای نسخه دسکتاپ (آرچ لینوکس - Arch Linux)
-وارد پوشه Totem WorkShop ( Rust )/Arch Linux شوید:
-`ash
+### 2. Desktop Edition (Arch Linux)
+```bash
+cd "Totem WorkShop ( Rust )/Arch Linux"
 chmod +x build_and_run.sh
 ./build_and_run.sh
-`
-یا برای نصب به عنوان پکیج سیستمی:
-`ash
-makepkg -si
-`
+```
 
-### ۳. اجرای نسخه تحت وب (WebAssembly)
-* **در ویندوز:** داخل پوشه Totem WorkShop ( Web Assembely ) روی فایل Start_Web.bat دبل‌کلیک کنید.
-* **در لینوکس / مک:** داخل پوشه Totem WorkShop ( Web Assembely )/Arch Linux اسکریپت start_web.sh را اجرا کنید:
-  `ash
-  chmod +x start_web.sh
-  ./start_web.sh
-  `
-* سپس آدرس زیر را در مرورگر باز کنید:
-  `	ext
-  http://localhost:8080
-  `
+### 3. Web Edition (Localhost)
+* **Windows:** Double-click `Start_Web.bat` inside `Totem WorkShop ( Web Assembely )/`.
+* **Linux:** Run `./start_web.sh` inside `Totem WorkShop ( Web Assembely )/Arch Linux/`.
+* Open your browser at: `http://localhost:8080`
+
+### 4. Deploying to Web Hosts
+The web build in `Totem WorkShop ( Web Assembely )/dist/` is 100% client-side. You can host it anywhere for free:
+* **GitHub Pages**
+* **Cloudflare Pages / Vercel / Netlify**
+* Any static web server (`nginx`, `apache`, `cPanel public_html`).
 
 ---
 
-## 🌐 نحوه هاست کردن نسخه وب (Deploy to Web Host)
+# 🇮🇷 فارسی
 
-نسخه وب این نرم‌افزار **۱۰۰٪ کلاینت‌ساید (Client-side)** است؛ یعنی به هیچ پایگاه داده یا زبان سمت سروری (PHP، پایتون، نودجی‌اس) نیاز ندارد!
+## 📖 معرفی پروژه
 
-برای قرار دادن روی اینترنت:
-کافیست تمامی محتویات پوشه Totem WorkShop ( Web Assembely )/dist را داخل:
-- **GitHub Pages** (کاملاً رایگان)
-- **Cloudflare Pages / Vercel / Netlify** (کاملاً رایگان)
-- یا پوشه public_html در هاست‌های اشتراکی (cPanel، DirectAdmin، Nginx، Apache)
-آپلود کنید.
+نرم‌افزار **Totem Workshop Pro** یک استودیوی تخصصی و کامل برای بازیکنان، ماد‌سازان و تولیدکنندگان محتوای بازی **Minecraft** است. این ابزار فرآیند پیچیده و زمان‌بر ساخت ریسورس‌پک‌های سفارشی برای **آیتم توتم (Totem of Undying)** را به یک فرآیند چندثانیه‌ای و کاملاً بصری تبدیل می‌کند.
+
+پروژه دارای معماری **دوگانه (Dual-Target)** با زبان سریع و ایمن **Rust** و فریم‌ورک رابط کاربری **egui / eframe** با تم تاریک است. برنامه هم به صورت باینری بومی مستقل دسکتاپ (ویندوز و لینوکس) و هم به صورت وب‌اپلیکیشن بدون نیاز به سرور (**WebAssembly / Wasm**) اجرا می‌شود.
 
 ---
 
-## 📄 ساختار خروجی Resource Pack
+## ⚡ امکانات تخصصی
 
-پکیج تولید شده دارای ساختار استاندارد رسمی ماینکرفت است:
-
-`
-[نام انتخابی پک]/
-├── pack.mcmeta                  # متادیتای فرمت نسخه و توضیحات رنگی
-├── pack.png                     # تصویر آیکون پک (۶۴×۶۴)
-└── assets/
-    └── minecraft/
-        ├── sounds.json          # تعریف رویداد صوتی use توتم
-        ├── sounds/
-        │   └── item/
-        │       └── totem/
-        │           └── use.ogg  # صدای اختصاصی پاپ شدن توتم
-        ├── textures/
-        │   └── item/
-        │       ├── totem_of_undying.png         # تکسچر یا اسپرایت‌شیت انیمیشن
-        │       └── totem_of_undying.png.mcmeta  # تعریف فریم‌ها و سرعت انیمیشن
-        └── models/
-            └── item/            # در صورت انتخاب حالت سه‌بعدی
-                ├── totem_of_undying.json
-                └── skin.json
-`
+* **استودیوی توتم متحرک:** تبدیل ویدیوهای مختلف به توتم‌های متحرک با حذف هوشمند پس‌زمینه با هوش مصنوعی BiRefNet و MediaPipe.
+* **استودیوی توتم از روی اسکین:** دریافت اسکین بازیکن با نام کاربری یا فایل محلی و تبدیل آن به توتم ۲بعدی کلاسیک یا مدل‌های ۳بعدی JSON.
+* **تولید خودکار ریسورس‌پک:** ساخت فایل‌های `pack.mcmeta`، تبدیل صدا به `use.ogg`، تنظیم آیکون پک و پالت رنگی رسمی ماینکرفت.
+* **پشتیبانی دو زبانه کامل:** پشتیبانی پیشرفته از زبان فارسی (BiDi Shaping راست‌به‌چپ هوشمند) و انگلیسی.
 
 ---
 
-## 📜 سازندگان و لایسنس | Credits & License
+## 👨‍💻 سازنده و حقوق معنوی
 
-- **ایده، طراحی و پیاده‌سازی اولیه پایتون:** @SirZigo
-- **پورت به زبان Rust، معماری Dual-Target و بهینه‌سازی Wasm:** توسط تیم توسعه
-- **لایسنس:** پروژه تحت لایسنس آزاد [MIT](LICENSE) منتشر شده است.
+* **طراحی و توسعه اولیه:** `@CanBeShahab`  
+* **مخزن رسمی گیت‌هاب:** [ShahabNoskhe/Totem-WorkShop](https://github.com/ShahabNoskhe/Totem-WorkShop)
+* **لایسنس:** انتشار یافته تحت مجوز متن‌باز MIT.

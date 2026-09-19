@@ -1,5 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 use crate::config::{save_config, AppConfig};
+use crate::core::i18n::{tr, Language};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::core::model_generator::generate_totem_3d_models;
 #[cfg(not(target_arch = "wasm32"))]
@@ -15,7 +16,7 @@ use crate::ui::widgets::{
     render_section_header, render_signature,
 };
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use egui::{Color32, ColorImage, CornerRadius, RichText, Stroke, StrokeKind, TextureHandle, TextureOptions, Ui, Vec2};
+use egui::{Color32, ColorImage, CornerRadius, RichText, Stroke, TextureHandle, TextureOptions, Ui, Vec2};
 use image::RgbaImage;
 use std::path::{Path, PathBuf};
 
@@ -332,6 +333,7 @@ pub fn render_skin_forge(
     state: &mut SkinForgeState,
     current_page: &mut AppPage,
     config_path: &Path,
+    lang: Language,
 ) {
     #[cfg(target_arch = "wasm32")]
     let _ = config_path;
@@ -376,19 +378,32 @@ pub fn render_skin_forge(
         }
     });
 
-    // Top Header / Navigation
+    // Top Header / Navigation (Minecraft Style)
     ui.horizontal(|ui| {
-        let back_btn = egui::Button::new(RichText::new("← Dashboard").strong().color(Color32::from_rgb(148, 163, 184)))
-            .fill(Color32::from_rgb(26, 30, 42))
-            .corner_radius(CornerRadius::same(8));
+        let back_btn = egui::Button::new(
+            RichText::new(tr("◀ Dashboard", "◀ داشبورد", lang))
+                .strong()
+                .color(Color32::from_rgb(220, 225, 235)),
+        )
+        .fill(Color32::from_rgb(52, 52, 60))
+        .corner_radius(CornerRadius::same(2));
         if ui.add(back_btn).clicked() {
             *current_page = AppPage::Dashboard;
         }
 
         ui.add_space(10.0);
-        ui.label(RichText::new("Skin-Forge Studio").size(16.0).strong().color(Color32::WHITE));
+        ui.label(
+            RichText::new(tr("Skin-Forge Studio", "استودیوی اسکین توتم", lang))
+                .size(16.0)
+                .strong()
+                .color(Color32::from_rgb(255, 215, 0)), // Minecraft Gold
+        );
         ui.label(RichText::new("•").color(Color32::DARK_GRAY));
-        ui.label(RichText::new("Custom Player Skin Totems").size(12.0).color(Color32::from_rgb(34, 197, 94)));
+        ui.label(
+            RichText::new(tr("Custom Player Skin Totems", "ساخت توتم از روی اسکین بازیکن ماینکرفت", lang))
+                .size(12.0)
+                .color(Color32::from_rgb(85, 255, 85)), // Minecraft Emerald Green
+        );
     });
 
     ui.add_space(12.0);
@@ -399,10 +414,10 @@ pub fn render_skin_forge(
         // =========================================================
         cols[0].vertical(|ui| {
             egui::Frame::group(ui.style())
-                .fill(Color32::from_rgb(18, 20, 28))
-                .corner_radius(CornerRadius::same(14))
+                .fill(Color32::from_rgb(24, 24, 30))
+                .corner_radius(CornerRadius::same(2))
                 .inner_margin(18.0)
-                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(34, 38, 52)))
+                .stroke(Stroke::new(1.5_f32, Color32::from_rgb(45, 45, 56)))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.set_height(ui.available_height());
@@ -416,20 +431,22 @@ pub fn render_skin_forge(
                                 .show(ui, |ui| {
                                     ui.vertical(|ui| {
                                         // 1. Skin Input
-                                        render_section_header(ui, "👤", "Minecraft Skin Source", Color32::from_rgb(34, 197, 94));
+                                        render_section_header(ui, "👤", &tr("Minecraft Skin Source", "منبع اسکین ماینکرفت", lang), Color32::from_rgb(34, 197, 94));
                                 ui.add_space(6.0);
 
-                                ui.label(RichText::new("Mojang Username:").size(12.0).color(Color32::from_rgb(200, 205, 215)));
+                                ui.label(RichText::new(tr("Mojang Username:", "نام کاربری بازیکن موجانگ:", lang)).size(12.0).color(Color32::from_rgb(200, 205, 215)));
                                 ui.horizontal(|ui| {
+                                    let hint = tr("Enter player username (e.g. Notch)...", "نام کاربری بازیکن (مثلا Notch)...", lang);
                                     ui.add(
                                         egui::TextEdit::singleline(&mut state.username_entry)
-                                            .hint_text("Enter player username (e.g. Notch)...")
+                                            .hint_text(hint)
                                             .desired_width(ui.available_width() - 95.0)
                                             .margin(Vec2::new(10.0, 7.0)),
                                     );
 
+                                    let fetch_label = if state.is_fetching { "⌛..." } else { &tr("🔍 Fetch", "🔍 دریافت", lang) };
                                     let fetch_btn = egui::Button::new(
-                                        RichText::new(if state.is_fetching { "⌛..." } else { "🔍 Fetch" })
+                                        RichText::new(fetch_label)
                                             .strong()
                                             .color(Color32::WHITE),
                                     )
@@ -453,15 +470,17 @@ pub fn render_skin_forge(
                                 let skin_file_label = state.skin_file_path.as_ref().map_or_else(
                                     || {
                                         if cfg!(target_arch = "wasm32") {
-                                            "Drop skin image into window".to_string()
+                                            tr("Drop skin image into window", "عکس اسکین را اینجا رها کنید", lang)
                                         } else {
-                                            "No custom skin chosen".to_string()
+                                            tr("No custom skin chosen", "اسکینی انتخاب نشده است", lang)
                                         }
                                     },
                                     |p| p.file_name().unwrap_or_default().to_string_lossy().to_string(),
                                 );
+                                let local_skin_title = tr("Local Skin File", "فایل اسکین محلی", lang);
+                                let choose_text = tr("Choose", "انتخاب", lang);
                                 if render_file_picker_card(
-                                    ui, "📂", "Local Skin File", &skin_file_label, state.skin_file_path.is_some() || state.raw_skin.is_some(), "Choose"
+                                    ui, "📂", &local_skin_title, &skin_file_label, state.skin_file_path.is_some() || state.raw_skin.is_some(), &choose_text
                                 ) {
                                     #[cfg(not(target_arch = "wasm32"))]
                                     if let Some(file) = rfd::FileDialog::new()
@@ -486,19 +505,19 @@ pub fn render_skin_forge(
                                 ui.add_space(18.0);
 
                                 // 2. Totem Mode
-                                render_section_header(ui, "🧊", "Totem Geometry Mode", Color32::from_rgb(56, 189, 248));
+                                render_section_header(ui, "🧊", &tr("Totem Geometry Mode", "حالت ساختار توتم", lang), Color32::from_rgb(56, 189, 248));
                                 ui.add_space(6.0);
 
                                 ui.horizontal(|ui| {
                                     let is_2d = state.totem_mode == TotemMode::TwoD;
                                     let btn_2d = egui::Button::new(
-                                        RichText::new("  2D Vanilla Style  ")
+                                        RichText::new(tr("  2D Vanilla Texture  ", "  تکسچر ۲بعدی کلاسیک  ", lang))
                                             .strong()
                                             .color(if is_2d { Color32::BLACK } else { Color32::WHITE }),
                                     )
-                                    .fill(if is_2d { Color32::from_rgb(56, 189, 248) } else { Color32::from_rgb(26, 30, 42) })
+                                    .fill(if is_2d { Color32::from_rgb(85, 255, 255) } else { Color32::from_rgb(52, 52, 60) })
                                     .min_size(Vec2::new(140.0, 34.0))
-                                    .corner_radius(CornerRadius::same(8));
+                                    .corner_radius(CornerRadius::same(2));
 
                                     if ui.add(btn_2d).clicked() {
                                         state.totem_mode = TotemMode::TwoD;
@@ -508,13 +527,13 @@ pub fn render_skin_forge(
 
                                     let is_3d = state.totem_mode == TotemMode::ThreeD;
                                     let btn_3d = egui::Button::new(
-                                        RichText::new("  3D Voxel Model  ")
+                                        RichText::new(tr("  3D Voxel Model  ", "  مدل ۳بعدی وکسل  ", lang))
                                             .strong()
                                             .color(if is_3d { Color32::BLACK } else { Color32::WHITE }),
                                     )
-                                    .fill(if is_3d { Color32::from_rgb(34, 197, 94) } else { Color32::from_rgb(26, 30, 42) })
+                                    .fill(if is_3d { Color32::from_rgb(85, 255, 85) } else { Color32::from_rgb(52, 52, 60) })
                                     .min_size(Vec2::new(140.0, 34.0))
-                                    .corner_radius(CornerRadius::same(8));
+                                    .corner_radius(CornerRadius::same(2));
 
                                     if ui.add(btn_3d).clicked() {
                                         state.totem_mode = TotemMode::ThreeD;
@@ -524,22 +543,25 @@ pub fn render_skin_forge(
                                 ui.add_space(18.0);
 
                                 // 3. Pack Identity
-                                render_section_header(ui, "🏷", "Pack Settings & Audio", Color32::from_rgb(245, 158, 11));
+                                render_section_header(ui, "🏷", &tr("Pack Settings & Audio", "تنظیمات ریسورس‌پک و صدا", lang), Color32::from_rgb(245, 158, 11));
                                 ui.add_space(6.0);
 
                                 // Icon Card
                                 let has_icon = state.icon_path.is_some() || state.icon_bytes.is_some();
+                                let def_icon_label = tr("Default Icon", "آیکون پیش‌فرض", lang);
                                 let icon_label = state.icon_path.as_ref().map_or_else(
                                     || {
                                         if state.icon_bytes.is_some() {
-                                            "Custom Icon Loaded".to_string()
+                                            tr("Custom Icon Loaded", "آیکون سفارشی بارگذاری شد", lang)
                                         } else {
-                                            "Default Icon".to_string()
+                                            def_icon_label
                                         }
                                     },
                                     |p| p.file_name().unwrap_or_default().to_string_lossy().to_string(),
                                 );
-                                if render_file_picker_card(ui, "🖼", "Pack Icon", &icon_label, has_icon, "Browse") {
+                                let icon_title = tr("Pack Icon", "آیکون ریسورس‌پک", lang);
+                                let browse_text = tr("Browse", "انتخاب", lang);
+                                if render_file_picker_card(ui, "🖼", &icon_title, &icon_label, has_icon, &browse_text) {
                                     #[cfg(not(target_arch = "wasm32"))]
                                     if let Some(file) = rfd::FileDialog::new().add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "gif", "ico"]).pick_file() {
                                         state.icon_path = Some(file);
@@ -560,7 +582,8 @@ pub fn render_skin_forge(
 
                                 // Sound Card
                                 let has_sound = state.sound_path.is_some() || state.sound_bytes.is_some();
-                                if render_file_picker_card(ui, "🎵", "Pop Sound", &state.sound_label, has_sound, "Browse") {
+                                let sound_title = tr("Pop Sound", "افکت صوتی استفاده توتم", lang);
+                                if render_file_picker_card(ui, "🎵", &sound_title, &state.sound_label, has_sound, &browse_text) {
                                     #[cfg(not(target_arch = "wasm32"))]
                                     if let Some(file) = rfd::FileDialog::new().add_filter("Audio Files", &["ogg", "mp3", "wav", "flac", "aac", "m4a", "wma", "opus"]).pick_file() {
                                         state.sound_label = file.file_name().unwrap_or_default().to_string_lossy().to_string();
@@ -582,7 +605,7 @@ pub fn render_skin_forge(
                                 ui.add_space(10.0);
 
                                 // Version
-                                ui.label(RichText::new("Target Minecraft Version:").size(12.0).color(Color32::from_rgb(200, 205, 215)));
+                                ui.label(RichText::new(tr("Target Minecraft Version:", "نسخه ماینکرفت هدف:", lang)).size(12.0).color(Color32::from_rgb(200, 205, 215)));
                                 egui::ComboBox::from_id_salt("skin_mc_version")
                                     .selected_text(MC_VERSIONS[state.version_idx].display)
                                     .width(ui.available_width() - 10.0)
@@ -597,7 +620,7 @@ pub fn render_skin_forge(
                                 render_mc_color_palette(ui, target_ref);
 
                                 ui.add_space(10.0);
-                                ui.label(RichText::new("Resource Pack Name:").size(12.0).color(Color32::from_rgb(200, 205, 215)));
+                                ui.label(RichText::new(tr("Resource Pack Name:", "نام ریسورس‌پک:", lang)).size(12.0).color(Color32::from_rgb(200, 205, 215)));
                                 let name_resp = ui.add(
                                     egui::TextEdit::singleline(&mut state.pack_name)
                                         .desired_width(ui.available_width() - 10.0)
@@ -608,7 +631,7 @@ pub fn render_skin_forge(
                                 }
 
                                 ui.add_space(6.0);
-                                ui.label(RichText::new("Resource Pack Description:").size(12.0).color(Color32::from_rgb(200, 205, 215)));
+                                ui.label(RichText::new(tr("Resource Pack Description:", "توضیحات ریسورس‌پک:", lang)).size(12.0).color(Color32::from_rgb(200, 205, 215)));
                                 let desc_resp = ui.add(
                                     egui::TextEdit::singleline(&mut state.pack_desc)
                                         .desired_width(ui.available_width() - 10.0)
@@ -622,18 +645,20 @@ pub fn render_skin_forge(
                                 #[cfg(not(target_arch = "wasm32"))]
                                 ui.horizontal(|ui| {
                                     let dir_name = state.output_dir.file_name().unwrap_or_default().to_string_lossy();
-                                    ui.label(RichText::new(format!("📂 Save To: .../{dir_name}")).size(11.0).color(Color32::GRAY));
-                                    if ui.button("Change...").clicked() {
+                                    let save_prefix = tr("📂 Save To:", "📂 مسیر ذخیره:", lang);
+                                    let change_btn_text = tr("Change...", "تغییر مسیر...", lang);
+                                    ui.label(RichText::new(format!("{save_prefix} .../{dir_name}")).size(11.0).color(Color32::GRAY));
+                                    if ui.button(change_btn_text).clicked() {
                                         if let Some(folder) = rfd::FileDialog::new().set_directory(&state.output_dir).pick_folder() {
                                             state.output_dir = folder.clone();
-                                            let _ = save_config(config_path, &AppConfig { output_dir: folder.to_string_lossy().to_string() });
+                                            let _ = save_config(config_path, &AppConfig { output_dir: folder.to_string_lossy().to_string(), language: lang });
                                         }
                                     }
                                 });
 
                                 #[cfg(target_arch = "wasm32")]
                                 ui.horizontal(|ui| {
-                                    ui.label(RichText::new("📥 Direct Browser Download (.zip pack ready to use)").size(11.5).color(Color32::from_rgb(56, 189, 248)));
+                                    ui.label(RichText::new(tr("📥 Direct Browser Download (.zip pack ready to use)", "📥 دانلود مستقیم در مرورگر (فایل زیپ آماده استفاده)", lang)).size(11.5).color(Color32::from_rgb(56, 189, 248)));
                                 });
 
                                 ui.add_space(10.0);
@@ -648,10 +673,10 @@ pub fn render_skin_forge(
         // =========================================================
         cols[1].vertical(|ui| {
             egui::Frame::group(ui.style())
-                .fill(Color32::from_rgb(18, 20, 28))
-                .corner_radius(CornerRadius::same(14))
+                .fill(Color32::from_rgb(24, 24, 30))
+                .corner_radius(CornerRadius::same(2))
                 .inner_margin(20.0)
-                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(34, 38, 52)))
+                .stroke(Stroke::new(1.5_f32, Color32::from_rgb(45, 45, 56)))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.set_height(ui.available_height());
@@ -659,28 +684,29 @@ pub fn render_skin_forge(
                     ui.vertical_centered(|ui| {
                         ui.add_space(8.0);
                         ui.label(
-                            RichText::new("Hand Preview & Totem")
+                            RichText::new(tr("Hand Preview & Totem", "پیش‌نمایش توتم در دست", lang))
                                 .size(22.0)
                                 .strong()
-                                .color(Color32::WHITE),
+                                .color(Color32::from_rgb(255, 215, 0)), // Minecraft Gold
                         );
                         ui.label(
-                            RichText::new("Real-time In-Game Totem Rendering")
+                            RichText::new(tr("Real-time In-Game Totem Rendering", "رندر آنی توتم درون بازی ماینکرفت", lang))
                                 .size(12.0)
-                                .color(Color32::from_rgb(148, 163, 184)),
+                                .color(Color32::from_rgb(180, 185, 200)),
                         );
 
                         ui.add_space(20.0);
 
-                        // Preview Pedestal Box
+                        // Preview Pedestal Box (Minecraft Item Frame 3D Slot)
                         let preview_rect = ui.allocate_space(Vec2::new(280.0, 280.0)).1;
                         let painter = ui.painter();
-                        painter.rect_filled(preview_rect, CornerRadius::same(16), Color32::from_rgb(13, 15, 20));
-                        painter.rect_stroke(
+                        crate::ui::widgets::paint_mc_beveled_box(
+                            painter,
                             preview_rect,
-                            CornerRadius::same(16),
-                            Stroke::new(1.2_f32, Color32::from_rgb(45, 55, 75)),
-                            StrokeKind::Inside,
+                            Color32::from_rgb(18, 18, 22),
+                            Color32::from_rgb(10, 10, 14),
+                            Color32::from_rgb(45, 45, 55),
+                            Color32::BLACK,
                         );
 
                         let texture_to_show = match state.totem_mode {
@@ -709,12 +735,13 @@ pub fn render_skin_forge(
                                 egui::FontId::proportional(34.0),
                                 Color32::WHITE,
                             );
+                            let await_text = tr("Awaiting Skin Input\nSearch Username or Choose File", "در انتظار دریافت اسکین\nنام کاربری را وارد یا فایل اسکین را انتخاب کنید", lang);
                             painter.text(
                                 preview_rect.center() + Vec2::new(0.0, 20.0),
                                 egui::Align2::CENTER_CENTER,
-                                "Awaiting Skin Input\nSearch Username or Choose File",
+                                await_text,
                                 egui::FontId::proportional(12.5),
-                                Color32::from_rgb(120, 130, 150),
+                                Color32::from_rgb(140, 145, 160),
                             );
                         }
 
@@ -722,41 +749,47 @@ pub fn render_skin_forge(
 
                         // Status Badge
                         let mode_name = match state.totem_mode {
-                            TotemMode::TwoD => "Mode: 2D Vanilla Texture (16x16)",
-                            TotemMode::ThreeD => "Mode: 3D Voxel Custom Model (skin.json)",
+                            TotemMode::TwoD => tr("Mode: 2D Vanilla Texture (16x16)", "حالت: تکسچر ۲بعدی کلاسیک (۱۶×۱۶)", lang),
+                            TotemMode::ThreeD => tr("Mode: 3D Voxel Custom Model (skin.json)", "حالت: مدل ۳بعدی وکسل (skin.json)", lang),
                         };
-                        ui.label(RichText::new(mode_name).size(12.0).color(Color32::from_rgb(56, 189, 248)));
+                        ui.label(RichText::new(mode_name).size(12.0).color(Color32::from_rgb(85, 255, 255)));
 
                         ui.add_space(20.0);
 
-                        // Progress Bar
+                        // Progress Bar (Minecraft XP Green)
                         render_clean_progress_bar(
                             ui,
                             state.progress.fraction,
                             ui.available_width() - 30.0,
                             14.0,
-                            Color32::from_rgb(34, 197, 94),
+                            Color32::from_rgb(85, 255, 85),
                         );
 
                         ui.add_space(20.0);
 
-                        // Generate Button
+                        // Generate Button (Minecraft Emerald Button)
                         let is_ready = !state.progress.is_running && state.raw_skin.is_some();
                         let btn_color = if is_ready {
-                            Color32::from_rgb(22, 163, 74)
+                            Color32::from_rgb(46, 125, 50)
                         } else {
-                            Color32::from_rgb(30, 35, 48)
+                            Color32::from_rgb(42, 42, 48)
+                        };
+
+                        let btn_label = if state.progress.is_running {
+                            tr("⏳ BUILDING PACK...", "⏳ در حال ساخت ریسورس‌پک...", lang)
+                        } else {
+                            tr("🚀 COMPILE SKIN TOTEM PACK", "🚀 ساخت و استخراج ریسورس‌پک اسکین", lang)
                         };
 
                         let gen_btn = egui::Button::new(
-                            RichText::new(if state.progress.is_running { "⏳ BUILDING PACK..." } else { "🚀 COMPILE SKIN TOTEM PACK" })
+                            RichText::new(btn_label)
                                 .size(15.0)
                                 .strong()
-                                .color(if is_ready { Color32::WHITE } else { Color32::from_rgb(100, 110, 130) }),
+                                .color(if is_ready { Color32::WHITE } else { Color32::from_rgb(120, 125, 140) }),
                         )
                         .fill(btn_color)
                         .min_size(Vec2::new(ui.available_width() - 30.0, 48.0))
-                        .corner_radius(CornerRadius::same(10));
+                        .corner_radius(CornerRadius::same(2));
 
                         if ui.add_enabled(is_ready, gen_btn).clicked() {
                             state.generate_pack();
@@ -766,24 +799,36 @@ pub fn render_skin_forge(
                             ui.add_space(16.0);
                             match res {
                                 Ok(msg) => {
-                                    let (res_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 20.0, 42.0), egui::Sense::hover());
+                                    let (res_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 20.0, 44.0), egui::Sense::hover());
                                     let p = ui.painter();
-                                    p.rect_filled(res_rect, CornerRadius::same(8), Color32::from_rgb(20, 45, 30));
-                                    p.rect_stroke(res_rect, CornerRadius::same(8), Stroke::new(1.0_f32, Color32::from_rgb(34, 197, 94)), StrokeKind::Inside);
-                                    p.text(res_rect.center(), egui::Align2::CENTER_CENTER, msg, egui::FontId::proportional(12.0), Color32::from_rgb(74, 222, 128));
+                                    crate::ui::widgets::paint_mc_beveled_box(
+                                        p,
+                                        res_rect,
+                                        Color32::from_rgb(24, 48, 30),
+                                        Color32::from_rgb(85, 255, 85),
+                                        Color32::from_rgb(12, 24, 16),
+                                        Color32::BLACK,
+                                    );
+                                    p.text(res_rect.center(), egui::Align2::CENTER_CENTER, msg, egui::FontId::proportional(12.0), Color32::from_rgb(85, 255, 85));
                                 }
                                 Err(err) => {
-                                    let (res_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 20.0, 42.0), egui::Sense::hover());
+                                    let (res_rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 20.0, 44.0), egui::Sense::hover());
                                     let p = ui.painter();
-                                    p.rect_filled(res_rect, CornerRadius::same(8), Color32::from_rgb(45, 20, 20));
-                                    p.rect_stroke(res_rect, CornerRadius::same(8), Stroke::new(1.0_f32, Color32::from_rgb(239, 68, 68)), StrokeKind::Inside);
-                                    p.text(res_rect.center(), egui::Align2::CENTER_CENTER, err, egui::FontId::proportional(12.0), Color32::from_rgb(248, 113, 113));
+                                    crate::ui::widgets::paint_mc_beveled_box(
+                                        p,
+                                        res_rect,
+                                        Color32::from_rgb(48, 24, 24),
+                                        Color32::from_rgb(255, 85, 85),
+                                        Color32::from_rgb(24, 12, 12),
+                                        Color32::BLACK,
+                                    );
+                                    p.text(res_rect.center(), egui::Align2::CENTER_CENTER, err, egui::FontId::proportional(12.0), Color32::from_rgb(255, 85, 85));
                                 }
                             }
                         }
 
                         ui.add_space(20.0);
-                        render_signature(ui);
+                        render_signature(ui, lang);
                     });
                 });
         });

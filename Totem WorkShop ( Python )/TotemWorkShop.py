@@ -21,7 +21,7 @@ SIGNATURE_STYLE = {"font": ("Consolas", 12, "italic"), "text_color": "#555555"}
 class TotemWorkshopPro(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Totem Workshop Pro 🪽 | Created by @SirZigo")
+        self.title("Totem Workshop Pro 🪽 | Created by @CanBeShahab")
         self.geometry("1100x800")
         
         self.attributes('-alpha', 0.0)
@@ -70,7 +70,7 @@ class TotemWorkshopPro(ctk.CTk):
         
         ctk.CTkLabel(dash, text="✨ Totem Workshop Pro ✨", font=("Arial", 36, "bold"), text_color="#5DADE2").pack(pady=(70, 10))
         # امضا در صفحه اصلی زیر تایتل
-        ctk.CTkLabel(dash, text="Created By : @SirZigo", **SIGNATURE_STYLE).pack(pady=(0, 40))
+        ctk.CTkLabel(dash, text="Created By : @CanBeShahab", **SIGNATURE_STYLE).pack(pady=(0, 40))
         
         cards_frame = ctk.CTkFrame(dash, fg_color="transparent")
         cards_frame.pack()
@@ -272,7 +272,7 @@ class AnimatedTotemModule(ctk.CTkFrame):
         )
         self.start_btn.grid(row=2, column=0, pady=40)
 
-        ctk.CTkLabel(self.right_frame, text="Created By : @SirZigo", **SIGNATURE_STYLE).grid(row=4, column=0, pady=10, sticky="s")
+        ctk.CTkLabel(self.right_frame, text="Created By : @CanBeShahab", **SIGNATURE_STYLE).grid(row=4, column=0, pady=10, sticky="s")
 
     # ==========================================
     # توابع و لاجیک برنامه
@@ -547,7 +547,7 @@ class SkinForgeModule(ctk.CTkFrame):
 
         ctk.CTkButton(self.right_frame, text="🚀 GENERATE SKIN TOTEM", fg_color="#27AE60", hover_color="#1E8449", height=50, font=("Arial", 16, "bold"), command=self.generate_skin_totem).pack(pady=20)
 
-        ctk.CTkLabel(self.right_frame, text="Created By : @SirZigo", **SIGNATURE_STYLE).grid(row=4, column=0, pady=10, sticky="s")
+        ctk.CTkLabel(self.right_frame, text="Created By : @CanBeShahab", **SIGNATURE_STYLE).grid(row=4, column=0, pady=10, sticky="s")
 
     def toggle_preview_mode(self, mode):
         if not hasattr(self, 'preview_2d') or not hasattr(self, 'preview_3d'):

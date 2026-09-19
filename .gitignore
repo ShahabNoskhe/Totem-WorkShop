@@ -1,9 +1,11 @@
 target/
+**/target/
 *.zip
 *.rar
 *.log
 *.tmp
 *.onnx
 models/
+**/models/
 .DS_Store
 Thumbs.db
