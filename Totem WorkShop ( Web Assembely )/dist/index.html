@@ -16,6 +16,9 @@ window.wasmBindings = bindings;
 dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
 
 </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         html, body {
             margin: 0;
@@ -23,9 +26,12 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #0d0f16;
+            background: radial-gradient(circle at 50% 30%, #161a29 0%, #0c0e15 70%, #06070a 100%);
             color: #f1f5f9;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: "Vazirmatn", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -35,6 +41,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             height: 100% !important;
             display: block;
             outline: none;
+            transition: opacity 0.4s ease-in-out;
         }
         #loading {
             position: absolute;
@@ -44,43 +51,51 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 16px;
+            gap: 18px;
             pointer-events: none;
             user-select: none;
+            transition: opacity 0.5s ease-out;
         }
         .spinner {
-            width: 48px;
-            height: 48px;
-            border: 4px solid rgba(56, 189, 248, 0.15);
+            width: 54px;
+            height: 54px;
+            border: 4px solid rgba(56, 189, 248, 0.12);
             border-radius: 50%;
-            border-top-color: #38bdf8;
-            animation: spin 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            border-top: 4px solid #38bdf8;
+            border-right: 4px solid #34d399;
+            box-shadow: 0 0 24px rgba(56, 189, 248, 0.35);
+            animation: spin 0.85s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
         }
         .loading-title {
-            font-size: 20px;
+            font-size: 22px;
             font-weight: 700;
             letter-spacing: 0.5px;
-            color: #ffffff;
+            background: linear-gradient(135deg, #ffd700, #55ffff, #55ff55);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
         }
         .loading-sub {
-            font-size: 13px;
+            font-size: 13.5px;
             color: #94a3b8;
+            letter-spacing: 0.3px;
         }
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
     <!-- MediaPipe AI Background Segmentation for Videos -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
-    <!-- ONNX Runtime Web for BiRefNet AI Neural Background Removal -->
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js" crossorigin="anonymous"></script>
+    <!-- ONNX Runtime Web for Neural Background Removal (WebGPU & Wasm SIMD) -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.all.min.js" crossorigin="anonymous"></script>
 <link rel="modulepreload" href="/totem_workshop-d04dbdabd3db6ffb.js" crossorigin="anonymous" integrity="sha384-8kuX0p/Ssw//7H1oJcvSRh/AaPg1m2hLKu6g3XrjFhAt8LEmIg+qeu4Dq0/Arsan"><link rel="preload" href="/totem_workshop-d04dbdabd3db6ffb_bg.wasm" crossorigin="anonymous" integrity="sha384-W8pBrK96I2SNuQ0eh5TOk/CkTxO8y+BM6CmSCiayQytcXx+A8vMwbqgUzxEZS0HA" as="fetch" type="application/wasm"></head>
 <body>
     <div id="loading">
         <div class="spinner"></div>
         <div class="loading-title">Totem Workshop Pro 🪽</div>
-        <div class="loading-sub">Initializing WebAssembly Engine...</div>
+        <div class="loading-sub">⚡ Initializing WebAssembly & Neural Engine...</div>
     </div>
     <canvas id="the_canvas_id"></canvas>
     <script>
@@ -199,40 +214,54 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
                 });
             },
 
-            getOrFetchBiRefNetModel: async function(onProgress) {
-                const cacheKey = 'totem_birefnet_model_v1';
-                const modelUrl = 'https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx';
+            getOrFetchNeuralModel: async function(onProgress) {
+                const cacheKey = 'totem_rmbg_model_v2';
+                const modelUrls = [
+                    './models/birefnet-general-lite.onnx',
+                    './models/rmbg-1.4.onnx',
+                    'https://cdn.jsdelivr.net/gh/ShahabNoskhe/Totem-WorkShop@main/models/birefnet-general-lite.onnx',
+                    'https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model_quantized.onnx',
+                    'https://hf-mirror.com/briaai/RMBG-1.4/resolve/main/onnx/model_quantized.onnx',
+                    'https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx'
+                ];
 
-                // Try CacheStorage first
+                // 1. Try Browser CacheStorage first (0ms instantaneous load)
                 if ('caches' in window) {
                     try {
                         const cache = await caches.open('totem-workshop-models');
                         const match = await cache.match(cacheKey);
                         if (match) {
-                            console.log('[BiRefNet] Found model in Browser CacheStorage!');
+                            console.log('[Neural AI] Loaded model from Browser CacheStorage!');
                             return await match.arrayBuffer();
                         }
                     } catch(e) {
-                        console.warn('[BiRefNet] CacheStorage read failed:', e);
+                        console.warn('[Neural AI] CacheStorage read warning:', e);
                     }
                 }
 
-                // Check local ./models/ directory first, then CDN
+                // 2. Try mirrors in sequence
                 let resp = null;
-                try {
-                    resp = await fetch('./models/birefnet-general-lite.onnx');
-                    if (!resp.ok) resp = null;
-                } catch(e) {}
-
-                if (!resp) {
-                    resp = await fetch(modelUrl);
+                for (const url of modelUrls) {
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 6000);
+                        const r = await fetch(url, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (r.ok) {
+                            resp = r;
+                            console.log('[Neural AI] Connected to model source:', url);
+                            break;
+                        }
+                    } catch(e) {
+                        console.log('[Neural AI] Mirror fallback:', url);
+                    }
                 }
 
-                if (!resp.ok) {
-                    throw new Error("Failed to download BiRefNet model from server or CDN");
+                if (!resp || !resp.ok) {
+                    throw new Error("No neural model mirror reachable; using MediaPipe/Chroma fallback.");
                 }
 
-                const contentLength = +resp.headers.get('Content-Length') || 224005088;
+                const contentLength = +resp.headers.get('Content-Length') || 42000000;
                 const reader = resp.body.getReader();
                 let receivedLength = 0;
                 let chunks = [];
@@ -257,7 +286,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
 
                 const buffer = allChunks.buffer;
 
-                // Cache in CacheStorage for instant future loads
+                // Cache in Browser Storage for 0ms future loads
                 if ('caches' in window) {
                     try {
                         const cache = await caches.open('totem-workshop-models');
@@ -270,46 +299,56 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
                 return buffer;
             },
 
-            initBiRefNetSession: async function(onProgress) {
-                if (this.biRefSession) return this.biRefSession;
+            initNeuralSession: async function(onProgress) {
+                if (this.neuralSession) return this.neuralSession;
                 if (this.isModelInitializing) {
                     while (this.isModelInitializing) {
                         await new Promise(r => setTimeout(r, 100));
                     }
-                    return this.biRefSession;
+                    return this.neuralSession;
                 }
 
                 this.isModelInitializing = true;
                 try {
                     if (typeof ort === 'undefined') {
-                        console.warn("[BiRefNet] ONNX Runtime Web is not loaded");
+                        console.warn("[Neural AI] ONNX Runtime Web is not loaded");
                         return null;
                     }
 
                     ort.env.wasm.numThreads = navigator.hardwareConcurrency ? Math.min(4, Math.max(1, navigator.hardwareConcurrency)) : 2;
                     ort.env.wasm.simd = true;
 
-                    const modelBuffer = await this.getOrFetchBiRefNetModel(onProgress);
+                    const modelBuffer = await this.getOrFetchNeuralModel(onProgress);
 
                     if (typeof onProgress === 'function') {
-                        onProgress(0.42, "Compiling BiRefNet Neural Graph...");
+                        onProgress(0.42, "Compiling Neural Graph with Hardware Acceleration...");
                     }
 
-                    this.biRefSession = await ort.InferenceSession.create(modelBuffer, {
-                        executionProviders: ['wasm'],
-                        graphOptimizationLevel: 'all'
-                    });
-                    console.log("[BiRefNet] Inference Session initialized successfully!");
-                    return this.biRefSession;
+                    // Try WebGPU first, then WASM SIMD
+                    const executionProviders = ['webgpu', 'wasm'];
+                    try {
+                        this.neuralSession = await ort.InferenceSession.create(modelBuffer, {
+                            executionProviders: executionProviders,
+                            graphOptimizationLevel: 'all'
+                        });
+                        console.log("[Neural AI] Session initialized with hardware acceleration!");
+                    } catch(epErr) {
+                        console.warn("[Neural AI] WebGPU fallback to WASM:", epErr);
+                        this.neuralSession = await ort.InferenceSession.create(modelBuffer, {
+                            executionProviders: ['wasm'],
+                            graphOptimizationLevel: 'all'
+                        });
+                    }
+                    return this.neuralSession;
                 } catch(e) {
-                    console.warn("[BiRefNet] Session initialization failed:", e);
+                    console.warn("[Neural AI] Session init failed:", e);
                     return null;
                 } finally {
                     this.isModelInitializing = false;
                 }
             },
 
-            segmentBiRefNet: async function(session, sourceCanvas, targetSize) {
+            segmentNeural: async function(session, sourceCanvas, targetSize) {
                 const modelDim = 1024;
                 const canvas1024 = document.createElement('canvas');
                 canvas1024.width = modelDim;
@@ -353,14 +392,15 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
                 const maskBytes = maskImgData.data;
 
                 for (let i = 0; i < planeSize; i++) {
-                    const logit = logits[i];
-                    const alpha = 1.0 / (1.0 + Math.exp(-logit));
+                    const val = logits[i];
+                    // Handle both logits (sigmoid) and direct probability outputs
+                    const alpha = val > 1.0 || val < 0.0 ? (1.0 / (1.0 + Math.exp(-val))) : val;
                     const aByte = Math.round(alpha * 255);
 
                     maskBytes[i * 4] = rgba[i * 4];
                     maskBytes[i * 4 + 1] = rgba[i * 4 + 1];
                     maskBytes[i * 4 + 2] = rgba[i * 4 + 2];
-                    maskBytes[i * 4 + 3] = aByte < 20 ? 0 : aByte;
+                    maskBytes[i * 4 + 3] = aByte < 25 ? 0 : aByte;
                 }
                 maskCtx.putImageData(maskImgData, 0, 0);
 
@@ -405,23 +445,23 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
                         const frames = [];
                         const interval = duration / frameCount;
 
-                        let biRefSession = null;
+                        let neuralSession = null;
                         let selfieSegmenter = null;
 
                         if (removeBackground) {
                             if (typeof onProgress === 'function') {
-                                onProgress(0.02, "Initializing AI Background Removal...");
+                                onProgress(0.02, "Initializing Neural AI Engine (RMBG / BiRefNet)...");
                             }
 
-                            // 1. Try BiRefNet ONNX
+                            // 1. Try Neural AI (RMBG / BiRefNet with WebGPU / WASM SIMD)
                             try {
-                                biRefSession = await self.initBiRefNetSession(onProgress);
+                                neuralSession = await self.initNeuralSession(onProgress);
                             } catch(e) {
-                                console.warn("[AI] BiRefNet init failed, falling back:", e);
+                                console.warn("[AI] Neural init failed, falling back to MediaPipe:", e);
                             }
 
-                            // 2. Fallback to MediaPipe Selfie Segmentation if BiRefNet not available
-                            if (!biRefSession && window.SelfieSegmentation) {
+                            // 2. Fallback to Google MediaPipe Selfie Segmentation
+                            if (!neuralSession && window.SelfieSegmentation) {
                                 try {
                                     selfieSegmenter = new window.SelfieSegmentation({
                                         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
@@ -429,7 +469,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
                                     selfieSegmenter.setOptions({ modelSelection: 1 });
                                     await selfieSegmenter.initialize();
                                 } catch(e) {
-                                    console.warn("[AI] SelfieSegmentation fallback failed:", e);
+                                    console.warn("[AI] MediaPipe fallback failed:", e);
                                     selfieSegmenter = null;
                                 }
                             }
@@ -463,8 +503,8 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
 
                             let frameData = null;
 
-                            if (biRefSession) {
-                                frameData = await self.segmentBiRefNet(biRefSession, tempCanvas, targetSize);
+                            if (neuralSession) {
+                                frameData = await self.segmentNeural(neuralSession, tempCanvas, targetSize);
                             } else if (selfieSegmenter) {
                                 let maskImage = null;
                                 selfieSegmenter.onResults((results) => {
@@ -494,7 +534,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
                             frames.push(frameData);
 
                             if (typeof onProgress === 'function') {
-                                const basePct = removeBackground && biRefSession ? 0.45 : 0.0;
+                                const basePct = removeBackground && neuralSession ? 0.45 : 0.0;
                                 const remainingScale = 1.0 - basePct;
                                 const pct = basePct + ((i + 1) / frameCount) * remainingScale;
                                 onProgress(pct, `Processed frame ${i + 1} / ${frameCount}`);
